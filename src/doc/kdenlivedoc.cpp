@@ -810,6 +810,7 @@ void KdenliveDoc::moveProjectData(const QString &/*src*/, const QString &dest)
 
 void KdenliveDoc::preserveTwigCode()
 {
+    m_twigCode.clear();
     QDomNodeList propertyList = m_document.elementsByTagName(QStringLiteral("property"));
     for (int i = 0; i < propertyList.count(); ++i) {
         if (propertyList.at(i).toElement().text().contains(QLatin1String("{%"))) {
