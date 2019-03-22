@@ -7,5 +7,6 @@ set(kdenlive_SRCS
   dialogs/renderwidget.cpp
   dialogs/wizard.cpp
   dialogs/titletemplatedialog.cpp
+  dialogs/twigcodedialog.cpp
   PARENT_SCOPE)
 

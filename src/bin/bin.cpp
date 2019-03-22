@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "doc/kdenlivedoc.h"
 #include "dialogs/clipcreationdialog.h"
 #include "ui_qtextclip_ui.h"
+#include "dialogs/twigcodedialog.h"
 #include "titler/titlewidget.h"
 #include "core.h"
 #include "utils/KoIconUtils.h"
@@ -1648,6 +1649,7 @@ void Bin::selectProxyModel(const QModelIndex &id)
             if (currentItem->itemType() == AbstractProjectItem::ClipItem) {
                 m_reloadAction->setEnabled(true);
                 m_locateAction->setEnabled(true);
+                m_twigAction->setEnabled(true);
                 m_duplicateAction->setEnabled(true);
                 ClipType type = static_cast<ProjectClip *>(currentItem)->clipType();
                 m_openAction->setEnabled(type == Image || type == Audio || type == Text || type == TextTemplate);
@@ -1659,6 +1661,7 @@ void Bin::selectProxyModel(const QModelIndex &id)
                 // A folder was selected, disable editing clip
                 m_openAction->setEnabled(false);
                 m_reloadAction->setEnabled(false);
+                m_twigAction->setEnabled(false);
                 m_locateAction->setEnabled(false);
                 m_duplicateAction->setEnabled(false);
                 m_deleteAction->setText(i18n("Delete Folder"));
@@ -1668,6 +1671,7 @@ void Bin::selectProxyModel(const QModelIndex &id)
                 m_openAction->setEnabled(false);
                 m_reloadAction->setEnabled(false);
                 m_locateAction->setEnabled(false);
+                m_twigAction->setEnabled(false);
                 m_duplicateAction->setEnabled(false);
                 m_deleteAction->setText(i18n("Delete Clip"));
                 m_proxyAction->setText(i18n("Proxy Clip"));
@@ -1677,6 +1681,7 @@ void Bin::selectProxyModel(const QModelIndex &id)
             emit findInTimeline(QString());
             m_reloadAction->setEnabled(false);
             m_locateAction->setEnabled(false);
+            m_twigAction->setEnabled(false);
             m_duplicateAction->setEnabled(false);
             m_openAction->setEnabled(false);
             m_deleteAction->setEnabled(false);
@@ -1907,6 +1912,7 @@ void Bin::contextMenuEvent(QContextMenuEvent *event)
     m_openAction->setEnabled(type == Image || type == Audio || type == TextTemplate || type == Text);
     m_reloadAction->setEnabled(enableClipActions);
     m_locateAction->setEnabled(enableClipActions);
+    m_twigAction->setEnabled(enableClipActions);
     m_duplicateAction->setEnabled(enableClipActions);
     m_editAction->setVisible(!isFolder);
     m_clipsActionsMenu->setEnabled(enableClipActions);
@@ -1922,6 +1928,7 @@ void Bin::contextMenuEvent(QContextMenuEvent *event)
     m_clipsActionsMenu->menuAction()->setVisible(!isFolder && (clipService.contains(QStringLiteral("avformat")) || clipService.contains(QStringLiteral("xml")) || clipService.contains(QStringLiteral("consumer"))));
     m_extractAudioAction->menuAction()->setVisible(!isFolder && !audioCodec.isEmpty());
     m_locateAction->setVisible(!isFolder && (isImported));
+    m_twigAction->setEnabled(!isFolder && (isImported));
 
     // Show menu
     event->setAccepted(true);
@@ -2330,6 +2337,9 @@ void Bin::setupGeneratorMenu()
     if (m_proxyAction) {
         m_menu->addAction(m_proxyAction);
     }
+    if (m_twigAction) {
+        m_menu->addAction(m_twigAction);
+    }
 
     addMenu = qobject_cast<QMenu *>(pCore->window()->factory()->container(QStringLiteral("clip_timeline"), pCore->window()));
     if (addMenu) {
@@ -2358,6 +2368,7 @@ void Bin::setupMenu(QMenu *addMenu, QAction *defaultAction, const QHash<QString,
     m_reloadAction = actions.value(QStringLiteral("reload"));
     m_duplicateAction = actions.value(QStringLiteral("duplicate"));
     m_locateAction = actions.value(QStringLiteral("locate"));
+    m_twigAction = actions.value(QStringLiteral("twig"));
     m_proxyAction = actions.value(QStringLiteral("proxy"));
 
     QMenu *m = new QMenu(this);
@@ -3750,6 +3761,37 @@ void Bin::slotUpdateClipProperties(const QString &id, const QMap<QString, QStrin
     if (clip) {
         clip->setProperties(properties, refreshPropertiesPanel);
     }
+}
+
+
+void Bin::createTwigCodeDialog()
+{
+    QModelIndex current = m_proxyModel->selectionModel()->currentIndex();
+    if (!current.isValid()) {
+        return;
+    }
+
+    AbstractProjectItem *item = static_cast<AbstractProjectItem *>(m_proxyModel->mapToSource(current).internalPointer());
+    ProjectClip *clip = qobject_cast<ProjectClip *>(item);
+    QString id = clip->clipId();
+
+    QPointer<TwicCodeDialog> dia = new TwicCodeDialog(QApplication::activeWindow());
+
+    if (dia->exec() == QDialog::Accepted) {
+        QString output = m_doc->parseTwigCode(dia->selectedText());
+        if (output.isEmpty())
+        {
+            QMessageBox messageBox;
+            messageBox.critical(0, "Error","Failed to parse twig code!");
+            messageBox.setFixedSize(500,200);
+            return;
+        }
+
+        m_doc->addProducerTwigCode(id, dia->selectedText());
+        slotAddClipExtraData(id, "resource", output);
+    }
+
+    delete dia;
 }
 
 void Bin::updateTimelineProducers(const QString &id, const QMap<QString, QString> &passProperties)

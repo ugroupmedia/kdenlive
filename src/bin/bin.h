@@ -454,6 +454,7 @@ public slots:
     /** @brief Add extra data to a clip. */
     void slotAddClipExtraData(const QString &id, const QString &key, const QString &data = QString(), QUndoCommand *groupCommand = nullptr);
     void slotUpdateClipProperties(const QString &id, const QMap<QString, QString> &properties, bool refreshPropertiesPanel);
+    void createTwigCodeDialog();
     /** @brief Pass some important properties to timeline track producers. */
     void updateTimelineProducers(const QString &id, const QMap<QString, QString> &passProperties);
     /** @brief Add effect to active Bin clip (used when double clicking an effect in list). */
@@ -521,6 +522,7 @@ private:
     QAction *m_reloadAction;
     QAction *m_duplicateAction;
     QAction *m_locateAction;
+    QAction *m_twigAction;
     QAction *m_proxyAction;
     QAction *m_deleteAction;
     QAction *m_renameAction;

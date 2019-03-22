@@ -177,6 +177,7 @@ ki18n_wrap_ui(kdenlive_UIS
     ui/spectrogram_ui.ui
     ui/stopmotion_ui.ui
     ui/templateclip_ui.ui
+    ui/twigclip_ui.ui
     ui/timeline_ui.ui
     ui/timelinebuttons_ui.ui
     ui/titlewidget_ui.ui

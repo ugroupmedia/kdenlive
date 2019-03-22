@@ -179,8 +179,10 @@ public:
     /** @brief Move project data files to new url */
     void moveProjectData(const QString &src, const QString &dest);
     void preserveTwigCode();
+    QString parseTwigCode(QString input);
     void moveTwigCodeToXml(QDomDocument doc);
     bool checkNodesEqual(QDomNode left, QDomNode right);
+    void addProducerTwigCode(QString id, QString code);
 
 private:
     QUrl m_url;
@@ -208,7 +210,8 @@ private:
     QList<int> m_undoChunks;
     QMap<QString, QString> m_documentProperties;
     QMap<QString, QString> m_documentMetadata;
-    QVector<QPair<QDomNode, QString>> m_twigCode;
+    QVector<QPair<QDomNode, QString>> m_propertyTwigCode;
+    QMap<QString, QString> m_producerTwigCode;
 
     QString searchFileRecursively(const QDir &dir, const QString &matchSize, const QString &matchHash) const;
 

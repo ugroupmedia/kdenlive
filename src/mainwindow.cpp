@@ -1537,6 +1537,9 @@ void MainWindow::setupActions()
     QAction *clipProperties = addAction(QStringLiteral("clip_properties"), i18n("Clip Properties"), pCore->bin(), SLOT(slotSwitchClipProperties()), KoIconUtils::themedIcon(QStringLiteral("document-edit")));
     clipProperties->setData("clip_properties");
 
+    QAction *twigResource = addAction(QStringLiteral("twig_resource"), i18n("Twig resource"), pCore->bin(), SLOT(createTwigCodeDialog()), KoIconUtils::themedIcon(QStringLiteral("kdenlive-add-text-clip")));
+    twigResource->setData("twig_resource");
+
     QAction *openClip = addAction(QStringLiteral("edit_clip"), i18n("Edit Clip"), pCore->bin(), SLOT(slotOpenClip()), KoIconUtils::themedIcon(QStringLiteral("document-open")));
     openClip->setData("edit_clip");
     openClip->setEnabled(false);
@@ -1580,6 +1583,7 @@ void MainWindow::setupActions()
     actions.insert(QStringLiteral("duplicate"), duplicateClip);
     actions.insert(QStringLiteral("proxy"), proxyClip);
     actions.insert(QStringLiteral("properties"), clipProperties);
+    actions.insert(QStringLiteral("twig"), twigResource);
     actions.insert(QStringLiteral("open"), openClip);
     actions.insert(QStringLiteral("delete"), deleteClip);
     actions.insert(QStringLiteral("folder"), addFolder);
