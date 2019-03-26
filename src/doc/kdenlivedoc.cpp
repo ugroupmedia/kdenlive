@@ -909,6 +909,27 @@ void KdenliveDoc::addProducerTwigCode(QString id, QString code)
     m_producerTwigCode[id] = code;
 }
 
+QString KdenliveDoc::getProducerTwigCode(QString id)
+{
+    if (m_producerTwigCode.contains(id))
+    {
+        return m_producerTwigCode[id];
+    }
+
+    for (int i = 0; i < m_propertyTwigCode.count(); ++i)
+    {
+        if (m_propertyTwigCode[i].first.toElement().hasAttribute(QStringLiteral("name")) &&
+            m_propertyTwigCode[i].first.toElement().attribute(QStringLiteral("name")) == "resource" &&
+            !m_propertyTwigCode[i].first.parentNode().isNull() &&
+            m_propertyTwigCode[i].first.parentNode().toElement().attribute(QStringLiteral("id")) == id)
+        {
+            return m_propertyTwigCode[i].second;
+        }
+    }
+
+    return "";
+}
+
 const QString &KdenliveDoc::profilePath() const
 {
     return m_profile.path;

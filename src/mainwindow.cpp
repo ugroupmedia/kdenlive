@@ -1537,7 +1537,7 @@ void MainWindow::setupActions()
     QAction *clipProperties = addAction(QStringLiteral("clip_properties"), i18n("Clip Properties"), pCore->bin(), SLOT(slotSwitchClipProperties()), KoIconUtils::themedIcon(QStringLiteral("document-edit")));
     clipProperties->setData("clip_properties");
 
-    QAction *twigResource = addAction(QStringLiteral("twig_resource"), i18n("Twig resource"), pCore->bin(), SLOT(createTwigCodeDialog()), KoIconUtils::themedIcon(QStringLiteral("kdenlive-add-text-clip")));
+    QAction *twigResource = addAction(QStringLiteral("twig_resource"), i18n("Twig Resource"), pCore->bin(), SLOT(createTwigCodeDialog()), KoIconUtils::themedIcon(QStringLiteral("kdenlive-add-text-clip")));
     twigResource->setData("twig_resource");
 
     QAction *openClip = addAction(QStringLiteral("edit_clip"), i18n("Edit Clip"), pCore->bin(), SLOT(slotOpenClip()), KoIconUtils::themedIcon(QStringLiteral("document-open")));

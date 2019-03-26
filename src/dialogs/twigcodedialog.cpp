@@ -21,10 +21,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "twigcodedialog.h"
 
-TwicCodeDialog::TwicCodeDialog(QWidget *parent) :
+TwicCodeDialog::TwicCodeDialog(QWidget *parent, QString initValue) :
         QDialog(parent)
 {
     m_view.setupUi(this);
+    m_view.textEdit->setPlainText(initValue);
 }
 
 QString TwicCodeDialog::selectedText() const

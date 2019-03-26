@@ -31,7 +31,7 @@ class TwicCodeDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit TwicCodeDialog(QWidget *parent = nullptr);
+    explicit TwicCodeDialog(QWidget *parent = nullptr, QString initValue = "");
     QString selectedText() const;
 
 private:

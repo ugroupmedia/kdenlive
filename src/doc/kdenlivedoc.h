@@ -183,6 +183,7 @@ public:
     void moveTwigCodeToXml(QDomDocument doc);
     bool checkNodesEqual(QDomNode left, QDomNode right);
     void addProducerTwigCode(QString id, QString code);
+    QString getProducerTwigCode(QString id);
 
 private:
     QUrl m_url;

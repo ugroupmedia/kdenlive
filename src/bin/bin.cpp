@@ -3775,7 +3775,14 @@ void Bin::createTwigCodeDialog()
     ProjectClip *clip = qobject_cast<ProjectClip *>(item);
     QString id = clip->clipId();
 
-    QPointer<TwicCodeDialog> dia = new TwicCodeDialog(QApplication::activeWindow());
+    QString resource = m_doc->getProducerTwigCode(id);
+
+    if (resource.isEmpty())
+    {
+        resource = clip->controller()->clipUrl();
+    }
+
+    QPointer<TwicCodeDialog> dia = new TwicCodeDialog(QApplication::activeWindow(), resource);
 
     if (dia->exec() == QDialog::Accepted) {
         QString output = m_doc->parseTwigCode(dia->selectedText());
