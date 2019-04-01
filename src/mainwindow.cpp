@@ -532,6 +532,7 @@ void MainWindow::init(const QString &MltPath, const QUrl &Url, const QString &cl
     m_timelineContextMenu->addAction(actionCollection()->action(KStandardAction::name(KStandardAction::Paste)));
 
     m_timelineContextClipMenu->addAction(actionCollection()->action(QStringLiteral("clip_in_project_tree")));
+    m_timelineContextClipMenu->addAction(actionCollection()->action(QStringLiteral("twig_resource_from_timeline")));
     //m_timelineContextClipMenu->addAction(actionCollection()->action("clip_to_project_tree"));
     m_timelineContextClipMenu->addAction(actionCollection()->action(QStringLiteral("delete_timeline_clip")));
     m_timelineContextClipMenu->addSeparator();
@@ -1362,6 +1363,7 @@ void MainWindow::setupActions()
 
     addAction(QStringLiteral("edit_item_duration"), i18n("Edit Duration"), this, SLOT(slotEditItemDuration()), KoIconUtils::themedIcon(QStringLiteral("measure")));
     addAction(QStringLiteral("clip_in_project_tree"), i18n("Clip in Project Bin"), this, SLOT(slotClipInProjectTree()), KoIconUtils::themedIcon(QStringLiteral("go-jump-definition")));
+    addAction(QStringLiteral("twig_resource_from_timeline"), i18n("TWIG Resource"), this, SLOT(createTwigDialogFromTimeline()), KoIconUtils::themedIcon(QStringLiteral("kdenlive-add-text-clip")));
     addAction(QStringLiteral("overwrite_to_in_point"), i18n("Overwrite Clip Zone in Timeline"), this, SLOT(slotInsertClipOverwrite()), KoIconUtils::themedIcon(QStringLiteral("timeline-overwrite")), Qt::Key_B);
     addAction(QStringLiteral("insert_to_in_point"), i18n("Insert Clip Zone in Timeline"), this, SLOT(slotInsertClipInsert()), KoIconUtils::themedIcon(QStringLiteral("timeline-insert")), Qt::Key_V);
     addAction(QStringLiteral("remove_extract"), i18n("Extract Timeline Zone"), this, SLOT(slotExtractZone()), KoIconUtils::themedIcon(QStringLiteral("timeline-extract")), Qt::SHIFT + Qt::Key_X);
@@ -1537,7 +1539,7 @@ void MainWindow::setupActions()
     QAction *clipProperties = addAction(QStringLiteral("clip_properties"), i18n("Clip Properties"), pCore->bin(), SLOT(slotSwitchClipProperties()), KoIconUtils::themedIcon(QStringLiteral("document-edit")));
     clipProperties->setData("clip_properties");
 
-    QAction *twigResource = addAction(QStringLiteral("twig_resource"), i18n("Twig Resource"), pCore->bin(), SLOT(createTwigCodeDialog()), KoIconUtils::themedIcon(QStringLiteral("kdenlive-add-text-clip")));
+    QAction *twigResource = addAction(QStringLiteral("twig_resource"), i18n("Twig Resource"), pCore->bin(), SLOT(createTwigCodeDialogFromResource()), KoIconUtils::themedIcon(QStringLiteral("kdenlive-add-text-clip")));
     twigResource->setData("twig_resource");
 
     QAction *openClip = addAction(QStringLiteral("edit_clip"), i18n("Edit Clip"), pCore->bin(), SLOT(slotOpenClip()), KoIconUtils::themedIcon(QStringLiteral("document-open")));
@@ -2992,6 +2994,32 @@ void MainWindow::slotClipInProjectTree()
         pCore->bin()->selectClipById(selectedId, pos, zone);
         if (m_projectMonitor->isActive()) {
             slotSwitchMonitors();
+        }
+    }
+}
+
+void MainWindow::createTwigDialogFromTimeline()
+{
+    if (pCore->projectManager()->currentTimeline()) {
+        int pos = -1;
+        QPoint zone;
+        const QString selectedId = pCore->projectManager()->currentTimeline()->projectView()->getClipUnderCursor(&pos, &zone);
+        if (selectedId.isEmpty()) {
+            return;
+        }
+        ProjectClip *clip = pCore->bin()->getBinClip(selectedId);
+        pCore->bin()->createTwigCodeDialog(clip);
+        QList<ItemInfo> matching = pCore->projectManager()->currentTimeline()->projectView()->findId(selectedId);
+
+        for (int i = 0; i < matching.length(); i++)
+        {
+            ClipItem *item = pCore->projectManager()->currentTimeline()->projectView()->getClipItemAtStart(matching.at(i).startPos, matching.at(i).track, matching.at(i).endPos);
+            if (item)
+            {
+                EffectsList effectList = item->effectList();
+                pCore->projectManager()->currentTimeline()->projectView()->deleteClip(matching.at(i));
+                pCore->projectManager()->currentTimeline()->projectView()->addClip(selectedId, matching.at(i), effectList, PlaylistState::ClipState::VideoOnly, true);
+            }
         }
     }
 }

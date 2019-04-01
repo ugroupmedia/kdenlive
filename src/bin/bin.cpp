@@ -3764,7 +3764,7 @@ void Bin::slotUpdateClipProperties(const QString &id, const QMap<QString, QStrin
 }
 
 
-void Bin::createTwigCodeDialog()
+void Bin::createTwigCodeDialogFromResource()
 {
     QModelIndex current = m_proxyModel->selectionModel()->currentIndex();
     if (!current.isValid()) {
@@ -3773,8 +3773,13 @@ void Bin::createTwigCodeDialog()
 
     AbstractProjectItem *item = static_cast<AbstractProjectItem *>(m_proxyModel->mapToSource(current).internalPointer());
     ProjectClip *clip = qobject_cast<ProjectClip *>(item);
-    QString id = clip->clipId();
 
+    createTwigCodeDialog(clip);
+}
+
+void Bin::createTwigCodeDialog(ProjectClip* clip)
+{
+    QString id = clip->clipId();
     QString resource = m_doc->getProducerTwigCode(id);
 
     if (resource.isEmpty())

@@ -389,6 +389,7 @@ private slots:
     void slotUnGroupClips();
     void slotEditItemDuration();
     void slotClipInProjectTree();
+    void createTwigDialogFromTimeline();
     //void slotClipToProjectTree();
     void slotSplitAudio();
     void slotSetAudioAlignReference();
