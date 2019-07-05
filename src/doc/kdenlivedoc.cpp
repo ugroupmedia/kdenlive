@@ -695,6 +695,7 @@ bool KdenliveDoc::saveSceneList(const QString &path, const QString &scene)
     }
 
     moveTwigCodeToXml(sceneList);
+    relativeToAbsolutePath(sceneList);
     // Backup current version
     backupLastSavedVersion(path);
     QFile file(path);
@@ -867,6 +868,58 @@ void KdenliveDoc::moveTwigCodeToXml(QDomDocument doc)
                         producerPropertiesList.at(k).firstChild().setNodeValue(m_producerTwigCode[id]);
                     }
                 }
+            }
+        }
+    }
+}
+
+void KdenliveDoc::relativeToAbsolutePath(QDomDocument doc) {
+    QString root = doc.documentElement().attributeNode("root").value();
+
+    QDomNodeList propertyList = doc.elementsByTagName(QStringLiteral("property"));
+    for (int j = 0; j < propertyList.count(); ++j) {
+        if (propertyList.at(j).toElement().attributeNode("name").value() == "resource")
+        {
+            QString path = propertyList.at(j).toElement().text();
+            if (path.indexOf(".") == -1) {
+                continue;
+            }
+
+            if (path.indexOf("{%") == -1) {
+                if (path.indexOf("/pnp-flattening") != -1){
+                    continue;
+                }
+                propertyList.at(j).firstChild().setNodeValue(root + "/" + path);
+            }
+            else {
+                int begin = path.indexOf("%}");
+                if (begin == -1) {
+                    continue;
+                }
+                int end = path.indexOf("{%", begin);
+                if (end == -1) {
+                    continue;
+                }
+                QString firstWord = path.mid(begin + 2, end - begin - 2);
+
+                int beginSecond = path.indexOf("%}", end);
+                if (begin == -1) {
+                    continue;
+                }
+                int endSecond = path.indexOf("{%", beginSecond);
+                if (end == -1) {
+                    continue;
+                }
+                QString secondWord = path.mid(beginSecond + 2, endSecond - beginSecond - 2);
+
+                if (secondWord.indexOf("/pnp-flattening") == -1){
+                    path.insert(beginSecond + 2, root + "/");
+                }
+                if (firstWord.indexOf("/pnp-flattening") == -1){
+                    path.insert(begin + 2, root + "/");
+                }
+
+                propertyList.at(j).firstChild().setNodeValue(path);
             }
         }
     }
