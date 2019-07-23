@@ -32,6 +32,7 @@
 #include <QObject>
 #include <QTimer>
 #include <QUrl>
+#include <QFileInfo>
 
 #include <kautosavefile.h>
 #include <KDirWatch>
@@ -180,6 +181,7 @@ public:
     void moveProjectData(const QString &src, const QString &dest);
     void preserveTwigCode();
     QString parseTwigCode(QString input);
+    QString replaceTwigPatterns(QString input);
     void moveTwigCodeToXml(QDomDocument doc);
     void relativeToAbsolutePath(QDomDocument doc);
     bool checkNodesEqual(QDomNode left, QDomNode right);
