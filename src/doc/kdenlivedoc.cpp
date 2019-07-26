@@ -886,7 +886,8 @@ void KdenliveDoc::moveTwigCodeToXml(QDomDocument doc)
 }
 
 void KdenliveDoc::relativeToAbsolutePath(QDomDocument doc) {
-    QString root = doc.documentElement().attributeNode("root").value();
+    QDomElement baseElement = doc.documentElement();
+    QString root = baseElement.attribute(QStringLiteral("root"));
 
     QDomNodeList propertyList = doc.elementsByTagName(QStringLiteral("property"));
     for (int j = 0; j < propertyList.count(); ++j) {
@@ -898,10 +899,8 @@ void KdenliveDoc::relativeToAbsolutePath(QDomDocument doc) {
             }
 
             if (path.indexOf("{%") == -1) {
-                if (QFileInfo::exists(replaceTwigPatterns(path))){
-                    continue;
-                }
-                if (QFileInfo::exists(replaceTwigPatterns(root + "/" + path))){
+
+                if (QFileInfo(replaceTwigPatterns(path)).isRelative()){
                     propertyList.at(j).firstChild().setNodeValue(root + "/" + path);
                 }
             }
@@ -926,16 +925,11 @@ void KdenliveDoc::relativeToAbsolutePath(QDomDocument doc) {
                 }
                 QString secondWord = path.mid(beginSecond + 2, endSecond - beginSecond - 2);
 
-                if (!QFileInfo::exists(replaceTwigPatterns(secondWord))){
-                    if (QFileInfo::exists(replaceTwigPatterns(root + "/" + secondWord))){
-                        path.insert(beginSecond + 2, root + "/");
-                    }
+                if (QFileInfo(replaceTwigPatterns(secondWord)).isRelative()){
+                    path.insert(beginSecond + 2, root + "/");
                 }
-
-                if (!QFileInfo::exists(replaceTwigPatterns(firstWord))){
-                    if (QFileInfo::exists(replaceTwigPatterns(root + "/" + firstWord))){
-                        path.insert(begin + 2, root + "/");
-                    }
+                if (QFileInfo(replaceTwigPatterns(firstWord)).isRelative()){
+                    path.insert(begin + 2, root + "/");
                 }
 
                 propertyList.at(j).firstChild().setNodeValue(path);
