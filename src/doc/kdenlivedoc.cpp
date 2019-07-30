@@ -855,7 +855,17 @@ QString KdenliveDoc::parseTwigCode(QString input)
 
 QString KdenliveDoc::replaceTwigPatterns(QString input)
 {
-    return input.replace("{format}", "1080").replace("{orientation}", "horizontal").replace("{language}", "en");
+    QString height = "";
+    QDomNodeList profileList = m_document.elementsByTagName(QStringLiteral("profile"));
+    if (!profileList.isEmpty()){
+        height = profileList.at(0).toElement().attribute(QStringLiteral("height"));
+    }
+    if (height.isEmpty()) {
+        return input.replace("{format}", "1080").replace("{orientation}", "horizontal").replace("{language}", "en");
+    }
+    else {
+        return input.replace("{format}", height).replace("{orientation}", "horizontal").replace("{language}", "en");
+    }
 }
 
 void KdenliveDoc::moveTwigCodeToXml(QDomDocument doc)
