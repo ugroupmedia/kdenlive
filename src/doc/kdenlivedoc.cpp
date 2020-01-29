@@ -729,38 +729,76 @@ void KdenliveDoc::moveProjectData(const QString & /*src*/, const QString &dest)
 void KdenliveDoc::preserveTwigCode()
 {
     my_document = m_document;
+
+    m_propertyTwigCode.clear();
+    m_producerTwigCode.clear();
+
     QDomNodeList propertyList = m_document.elementsByTagName(QStringLiteral("property"));
     for (int i = 0; i < propertyList.count(); ++i) {
         if (propertyList.at(i).toElement().text().contains(QLatin1String("{%"))) {
             QDomNode node = propertyList.at(i);
             QString text = node.toElement().text();
-            m_twigCode.push_back(QPair<QDomNode, QString>(node, text));
+            m_propertyTwigCode.push_back(QPair<QDomNode, QString>(node, text));
 
-            int begin = text.indexOf("%}");
-            if (begin == -1) {
-                continue;
-            }
-            int end = text.indexOf("{%", begin);
-            if (end == -1) {
+            QString output = parseTwigCode(text);
+            if (output.isEmpty())
+            {
                 continue;
             }
 
-            node.firstChild().setNodeValue(text.mid(begin + 2, end - begin - 2));
+            node.firstChild().setNodeValue(output);
         }
     }
 }
 
+QString KdenliveDoc::parseTwigCode(QString input)
+{
+    int begin = input.indexOf("%}");
+    if (begin == -1) {
+        return QString("");
+    }
+    int end = input.indexOf("{%", begin);
+    if (end == -1) {
+        return QString("");
+    }
+
+    return input.mid(begin + 2, end - begin - 2);
+}
+
 void KdenliveDoc::moveTwigCodeToXml(QDomDocument doc)
 {
-    for (int i = 0; i < m_twigCode.count(); ++i) {
+    for (int i = 0; i < m_propertyTwigCode.count(); ++i) {
         QDomNodeList propertyList = doc.elementsByTagName(QStringLiteral("property"));
         for (int j = 0; j < propertyList.count(); ++j) {
-            if (checkNodesEqual(propertyList.at(j), m_twigCode[i].first))
+            if (checkNodesEqual(propertyList.at(j), m_propertyTwigCode[i].first))
             {
-                propertyList.at(j).firstChild().setNodeValue(m_twigCode.at(i).second);
+                propertyList.at(j).firstChild().setNodeValue(m_propertyTwigCode.at(i).second);
             }
         }
     }
+
+    for (auto id : m_producerTwigCode.keys()){
+        QDomNodeList producerList = doc.elementsByTagName(QStringLiteral("producer"));
+        for (int j = 0; j < producerList.count(); ++j) {
+            QDomNodeList producerPropertiesList = producerList.at(j).childNodes();
+            for (int k = 0; k < producerPropertiesList.count(); ++k) {
+                QDomElement property = producerPropertiesList.at(k).toElement();
+                if (property.hasAttribute(QStringLiteral("name")) && property.attribute(QStringLiteral("name")) == QString("kdenlive:id") && property.text() == id){
+                    for (k = 0; k < producerPropertiesList.count(); ++k){
+                        if (producerPropertiesList.at(k).toElement().hasAttribute(QStringLiteral("name")) && producerPropertiesList.at(k).toElement().attribute(QStringLiteral("name")) == QString("resource")){
+                            producerPropertiesList.at(k).firstChild().setNodeValue(m_producerTwigCode[id]);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+void KdenliveDoc::addProducerTwigCode(QString id, QString code)
+{
+    m_producerTwigCode[id] = code;
 }
 
 bool KdenliveDoc::checkNodesEqual(QDomNode left, QDomNode right)
