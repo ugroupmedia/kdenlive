@@ -736,9 +736,9 @@ void KdenliveDoc::preserveTwigCode()
 
     QDomNodeList propertyList = m_document.elementsByTagName(QStringLiteral("property"));
     for (int i = 0; i < propertyList.count(); ++i) {
-        if (propertyList.at(i).toElement().text().contains(QLatin1String("{%"))) {
-            QDomNode node = propertyList.at(i);
-            QString text = node.toElement().text();
+        QDomNode node = propertyList.at(i);
+        QString text = node.toElement().text();
+        if (text.contains(QLatin1String("{%")) || text.contains(QLatin1String("{format}")) || text.contains(QLatin1String("{language}")) || text.contains(QLatin1String("{orientation}"))) {
             m_propertyTwigCode.push_back(QPair<QDomNode, QString>(node, text));
 
             QString output = parseTwigCode(text);
@@ -754,16 +754,38 @@ void KdenliveDoc::preserveTwigCode()
 
 QString KdenliveDoc::parseTwigCode(QString input)
 {
+    QString result = input;
     int begin = input.indexOf("%}");
-    if (begin == -1) {
-        return QString("");
-    }
-    int end = input.indexOf("{%", begin);
-    if (end == -1) {
-        return QString("");
+    if (begin != -1) {
+        int end = input.indexOf("{%", begin);
+        if (end != -1) {
+            result = input.mid(begin + 2, end - begin - 2);
+        }
     }
 
-    return input.mid(begin + 2, end - begin - 2);
+    result = replaceTwigPatterns(result);
+
+    if (result == input){
+        return QString("");
+    }
+    else{
+        return result;
+    }
+}
+
+QString KdenliveDoc::replaceTwigPatterns(QString input)
+{
+    QString height = "";
+    QDomNodeList profileList = m_document.elementsByTagName(QStringLiteral("profile"));
+    if (!profileList.isEmpty()){
+        height = profileList.at(0).toElement().attribute(QStringLiteral("height"));
+    }
+    if (height.isEmpty()) {
+        return input.replace("{format}", "1080").replace("{orientation}", "horizontal").replace("{language}", "en");
+    }
+    else {
+        return input.replace("{format}", height).replace("{orientation}", "horizontal").replace("{language}", "en");
+    }
 }
 
 void KdenliveDoc::moveTwigCodeToXml(QDomDocument doc)
@@ -824,7 +846,8 @@ QString KdenliveDoc::getProducerTwigCode(QString id)
 }
 
 void KdenliveDoc::relativeToAbsolutePath(QDomDocument doc) {
-    QString root = doc.documentElement().attributeNode("root").value();
+    QDomElement baseElement = doc.documentElement();
+    QString root = baseElement.attribute(QStringLiteral("root"));
 
     QDomNodeList propertyList = doc.elementsByTagName(QStringLiteral("property"));
     for (int j = 0; j < propertyList.count(); ++j) {
@@ -836,10 +859,9 @@ void KdenliveDoc::relativeToAbsolutePath(QDomDocument doc) {
             }
 
             if (path.indexOf("{%") == -1) {
-                if (path.indexOf("/pnp-flattening") != -1){
-                    continue;
+                if (QFileInfo(replaceTwigPatterns(path)).isRelative()){
+                    propertyList.at(j).firstChild().setNodeValue(root + "/" + path);
                 }
-                propertyList.at(j).firstChild().setNodeValue(root + "/" + path);
             }
             else {
                 int begin = path.indexOf("%}");
@@ -862,10 +884,10 @@ void KdenliveDoc::relativeToAbsolutePath(QDomDocument doc) {
                 }
                 QString secondWord = path.mid(beginSecond + 2, endSecond - beginSecond - 2);
 
-                if (secondWord.indexOf("/pnp-flattening") == -1){
+                if (QFileInfo(replaceTwigPatterns(secondWord)).isRelative()){
                     path.insert(beginSecond + 2, root + "/");
                 }
-                if (firstWord.indexOf("/pnp-flattening") == -1){
+                if (QFileInfo(replaceTwigPatterns(firstWord)).isRelative()){
                     path.insert(begin + 2, root + "/");
                 }
 

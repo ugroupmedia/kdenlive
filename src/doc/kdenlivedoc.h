@@ -157,6 +157,7 @@ public:
     int clipsCount() const;
     void preserveTwigCode();
     QString parseTwigCode(QString input);
+    QString replaceTwigPatterns(QString input);
     void moveTwigCodeToXml(QDomDocument doc);
     bool checkNodesEqual(QDomNode left, QDomNode right);
     void addProducerTwigCode(QString id, QString code);
