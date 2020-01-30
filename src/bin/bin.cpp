@@ -2035,7 +2035,7 @@ void Bin::setupMenu()
     m_locateAction->setEnabled(false);
     connect(m_locateAction, &QAction::triggered, this, &Bin::slotLocateClip);
 
-    m_twigAction = addAction(QStringLiteral("twig_resource"), i18n("Twig Resource"), QIcon::fromTheme(QStringLiteral("kdenlive-add-text-clip")));
+    m_twigAction = addAction(QStringLiteral("twig_resource"), i18n("Twig resource"), QIcon::fromTheme(QStringLiteral("kdenlive-add-text-clip")));
     m_twigAction->setData("twig_resource");
     m_twigAction->setEnabled(false);
     connect(m_twigAction, &QAction::triggered, this, &Bin::createTwigCodeDialog);
@@ -2954,8 +2954,7 @@ void Bin::slotAddClipExtraData(const QString &id, const QString &key, const QStr
     }
 }
 
-void Bin::createTwigCodeDialog()
-{
+void Bin::createTwigCodeDialog(){
     QModelIndex current = m_proxyModel->selectionModel()->currentIndex();
     if (!current.isValid()) {
         return;
@@ -2965,7 +2964,14 @@ void Bin::createTwigCodeDialog()
     auto clip = std::static_pointer_cast<ProjectClip>(item);
     QString id = clip->clipId();
 
-    QPointer<TwigCodeDialog> dia = new TwigCodeDialog(QApplication::activeWindow());
+    QString resource = m_doc->getProducerTwigCode(id);
+
+    if (resource.isEmpty())
+    {
+        resource = clip->url();
+    }
+
+    QPointer<TwigCodeDialog> dia = new TwigCodeDialog(QApplication::activeWindow(), resource);
 
     if (dia->exec() == QDialog::Accepted) {
         QString output = m_doc->parseTwigCode(dia->selectedText());

@@ -31,7 +31,7 @@ class TwigCodeDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit TwigCodeDialog(QWidget *parent = nullptr);
+    explicit TwigCodeDialog(QWidget *parent = nullptr, QString initValue = "");
     QString selectedText() const;
 
 private:
