@@ -159,6 +159,8 @@ KdenliveDoc::KdenliveDoc(const QUrl &url, QString projectFolder, QUndoGroup *und
             success = m_document.setContent(&file, false, &errorMsg, &line, &col);
             file.close();
 
+            preserveTwigCode();
+
             if (!success) {
                 // It is corrupted
                 int answer = KMessageBox::warningYesNoCancel(
@@ -588,6 +590,8 @@ bool KdenliveDoc::saveSceneList(const QString &path, const QString &scene)
         return false;
     }
 
+    moveTwigCodeToXml(sceneList);
+    relativeToAbsolutePath(sceneList);
     // Backup current version
     backupLastSavedVersion(path);
     if (m_documentOpenStatus != CleanProject) {
@@ -720,6 +724,208 @@ void KdenliveDoc::moveProjectData(const QString & /*src*/, const QString &dest)
                 KMessageBox::sorry(QApplication::activeWindow(), i18n("Moving proxy clips failed: %1", job->errorText()));
             }
         }
+    }
+}
+
+void KdenliveDoc::preserveTwigCode()
+{
+    my_document = m_document;
+
+    m_propertyTwigCode.clear();
+    m_producerTwigCode.clear();
+
+    QDomNodeList propertyList = m_document.elementsByTagName(QStringLiteral("property"));
+    for (int i = 0; i < propertyList.count(); ++i) {
+        QDomNode node = propertyList.at(i);
+        QString text = node.toElement().text();
+        if (text.contains(QLatin1String("{%")) || text.contains(QLatin1String("{format}")) || text.contains(QLatin1String("{language}")) || text.contains(QLatin1String("{orientation}"))) {
+            m_propertyTwigCode.push_back(QPair<QDomNode, QString>(node, text));
+
+            QString output = parseTwigCode(text);
+            if (output.isEmpty())
+            {
+                continue;
+            }
+
+            node.firstChild().setNodeValue(output);
+        }
+    }
+}
+
+QString KdenliveDoc::parseTwigCode(QString input)
+{
+    QString result = input;
+    int begin = input.indexOf("%}");
+    if (begin != -1) {
+        int end = input.indexOf("{%", begin);
+        if (end != -1) {
+            result = input.mid(begin + 2, end - begin - 2);
+        }
+    }
+
+    result = replaceTwigPatterns(result);
+
+    if (result == input){
+        return QString("");
+    }
+    else{
+        return result;
+    }
+}
+
+QString KdenliveDoc::replaceTwigPatterns(QString input)
+{
+    QString height = "";
+    QDomNodeList profileList = m_document.elementsByTagName(QStringLiteral("profile"));
+    if (!profileList.isEmpty()){
+        height = profileList.at(0).toElement().attribute(QStringLiteral("height"));
+    }
+    if (height.isEmpty()) {
+        return input.replace("{format}", "1080").replace("{orientation}", "horizontal").replace("{language}", "en");
+    }
+    else {
+        return input.replace("{format}", height).replace("{orientation}", "horizontal").replace("{language}", "en");
+    }
+}
+
+void KdenliveDoc::moveTwigCodeToXml(QDomDocument doc)
+{
+    for (int i = 0; i < m_propertyTwigCode.count(); ++i) {
+        QDomNodeList propertyList = doc.elementsByTagName(QStringLiteral("property"));
+        for (int j = 0; j < propertyList.count(); ++j) {
+            if (checkNodesEqual(propertyList.at(j), m_propertyTwigCode[i].first))
+            {
+                propertyList.at(j).firstChild().setNodeValue(m_propertyTwigCode.at(i).second);
+            }
+        }
+    }
+
+    for (auto id : m_producerTwigCode.keys()){
+        QDomNodeList producerList = doc.elementsByTagName(QStringLiteral("producer"));
+        for (int j = 0; j < producerList.count(); ++j) {
+            QDomNodeList producerPropertiesList = producerList.at(j).childNodes();
+            for (int k = 0; k < producerPropertiesList.count(); ++k) {
+                QDomElement property = producerPropertiesList.at(k).toElement();
+                if (property.hasAttribute(QStringLiteral("name")) && property.attribute(QStringLiteral("name")) == QString("kdenlive:id") && property.text() == id){
+                    for (k = 0; k < producerPropertiesList.count(); ++k){
+                        if (producerPropertiesList.at(k).toElement().hasAttribute(QStringLiteral("name")) && producerPropertiesList.at(k).toElement().attribute(QStringLiteral("name")) == QString("resource")){
+                            producerPropertiesList.at(k).firstChild().setNodeValue(m_producerTwigCode[id]);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+void KdenliveDoc::addProducerTwigCode(QString id, QString code)
+{
+    m_producerTwigCode[id] = code;
+}
+
+QString KdenliveDoc::getProducerTwigCode(QString id)
+{
+    if (m_producerTwigCode.contains(id))
+    {
+        return m_producerTwigCode[id];
+    }
+
+    for (int i = 0; i < m_propertyTwigCode.count(); ++i)
+    {
+        if (m_propertyTwigCode[i].first.toElement().hasAttribute(QStringLiteral("name")) &&
+            m_propertyTwigCode[i].first.toElement().attribute(QStringLiteral("name")) == "resource" &&
+            !m_propertyTwigCode[i].first.parentNode().isNull() &&
+            m_propertyTwigCode[i].first.parentNode().toElement().attribute(QStringLiteral("id")) == id)
+        {
+            return m_propertyTwigCode[i].second;
+        }
+    }
+
+    return "";
+}
+
+void KdenliveDoc::relativeToAbsolutePath(QDomDocument doc) {
+    QDomElement baseElement = doc.documentElement();
+    QString root = baseElement.attribute(QStringLiteral("root"));
+
+    QDomNodeList propertyList = doc.elementsByTagName(QStringLiteral("property"));
+    for (int j = 0; j < propertyList.count(); ++j) {
+        if (propertyList.at(j).toElement().attributeNode("name").value() == "resource")
+        {
+            QString path = propertyList.at(j).toElement().text();
+            if (path.indexOf(".") == -1) {
+                continue;
+            }
+
+            if (path.indexOf("{%") == -1) {
+                if (QFileInfo(replaceTwigPatterns(path)).isRelative()){
+                    propertyList.at(j).firstChild().setNodeValue(root + "/" + path);
+                }
+            }
+            else {
+                int begin = path.indexOf("%}");
+                if (begin == -1) {
+                    continue;
+                }
+                int end = path.indexOf("{%", begin);
+                if (end == -1) {
+                    continue;
+                }
+                QString firstWord = path.mid(begin + 2, end - begin - 2);
+
+                int beginSecond = path.indexOf("%}", end);
+                if (begin == -1) {
+                    continue;
+                }
+                int endSecond = path.indexOf("{%", beginSecond);
+                if (end == -1) {
+                    continue;
+                }
+                QString secondWord = path.mid(beginSecond + 2, endSecond - beginSecond - 2);
+
+                if (QFileInfo(replaceTwigPatterns(secondWord)).isRelative()){
+                    path.insert(beginSecond + 2, root + "/");
+                }
+                if (QFileInfo(replaceTwigPatterns(firstWord)).isRelative()){
+                    path.insert(begin + 2, root + "/");
+                }
+
+                propertyList.at(j).firstChild().setNodeValue(path);
+            }
+        }
+    }
+}
+
+bool KdenliveDoc::checkNodesEqual(QDomNode left, QDomNode right)
+{
+    QDomNode leftParent = left;
+    QDomNode rightParent = right;
+
+    while(true){
+        if (leftParent.isNull() && rightParent.isNull())
+            return true;
+
+        if (leftParent.isNull() != rightParent.isNull())
+            return false;
+
+        if (leftParent.toElement().tagName() != rightParent.toElement().tagName())
+            return false;
+
+        if (leftParent.toElement().hasAttribute(QStringLiteral("id")) != rightParent.toElement().hasAttribute(QStringLiteral("id")))
+            return false;
+
+        if (leftParent.toElement().hasAttribute(QStringLiteral("id")) && leftParent.toElement().attribute(QStringLiteral("id")) != rightParent.toElement().attribute(QStringLiteral("id")))
+            return false;
+
+        if (leftParent.toElement().hasAttribute(QStringLiteral("name")) != rightParent.toElement().hasAttribute(QStringLiteral("name")))
+            return false;
+
+        if (leftParent.toElement().hasAttribute(QStringLiteral("name")) && leftParent.toElement().attribute(QStringLiteral("name")) != rightParent.toElement().attribute(QStringLiteral("name")))
+            return false;
+
+        leftParent = leftParent.parentNode();
+        rightParent = rightParent.parentNode();
     }
 }
 
