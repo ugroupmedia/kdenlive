@@ -32,7 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "jobs/audiothumbjob.hpp"
 #include "jobs/jobmanager.h"
 #include "jobs/loadjob.hpp"
-#include "dialogs/twigcodedialog.h"
 #include "jobs/thumbjob.hpp"
 #include "kdenlive_debug.h"
 #include "kdenlivesettings.h"
@@ -1339,7 +1338,6 @@ void Bin::selectProxyModel(const QModelIndex &id)
             if (currentItem->itemType() == AbstractProjectItem::ClipItem) {
                 m_reloadAction->setEnabled(true);
                 m_locateAction->setEnabled(true);
-                m_twigAction->setEnabled(true);
                 m_duplicateAction->setEnabled(true);
                 std::shared_ptr<ProjectClip> clip = std::static_pointer_cast<ProjectClip>(currentItem);
                 ClipType::ProducerType type = clip->clipType();
@@ -1352,7 +1350,6 @@ void Bin::selectProxyModel(const QModelIndex &id)
                 m_openAction->setEnabled(false);
                 m_reloadAction->setEnabled(false);
                 m_locateAction->setEnabled(false);
-                m_twigAction->setEnabled(false);
                 m_duplicateAction->setEnabled(false);
                 m_deleteAction->setText(i18n("Delete Folder"));
                 m_proxyAction->setText(i18n("Proxy Folder"));
@@ -1361,7 +1358,6 @@ void Bin::selectProxyModel(const QModelIndex &id)
                 m_openAction->setEnabled(false);
                 m_reloadAction->setEnabled(false);
                 m_locateAction->setEnabled(false);
-                m_twigAction->setEnabled(false);
                 m_duplicateAction->setEnabled(false);
                 m_deleteAction->setText(i18n("Delete Clip"));
                 m_proxyAction->setText(i18n("Proxy Clip"));
@@ -1370,7 +1366,6 @@ void Bin::selectProxyModel(const QModelIndex &id)
         } else {
             m_reloadAction->setEnabled(false);
             m_locateAction->setEnabled(false);
-            m_twigAction->setEnabled(false);
             m_duplicateAction->setEnabled(false);
             m_openAction->setEnabled(false);
             m_deleteAction->setEnabled(false);
@@ -1622,7 +1617,6 @@ void Bin::contextMenuEvent(QContextMenuEvent *event)
     m_openAction->setEnabled(type == ClipType::Image || type == ClipType::Audio || type == ClipType::TextTemplate || type == ClipType::Text);
     m_reloadAction->setEnabled(enableClipActions);
     m_locateAction->setEnabled(enableClipActions);
-    m_twigAction->setEnabled(enableClipActions);
     m_duplicateAction->setEnabled(enableClipActions);
     m_renameAction->setEnabled(true);
 
@@ -1644,7 +1638,6 @@ void Bin::contextMenuEvent(QContextMenuEvent *event)
         (clipService.contains(QStringLiteral("avformat")) || clipService.contains(QStringLiteral("xml")) || clipService.contains(QStringLiteral("consumer"))));
     m_extractAudioAction->menuAction()->setVisible(!isFolder && !audioCodec.isEmpty());
     m_locateAction->setVisible(itemType != AbstractProjectItem::FolderItem && (isImported));
-    m_twigAction->setEnabled(!isFolder && (isImported));
 
     // Show menu
     event->setAccepted(true);
@@ -1994,9 +1987,6 @@ void Bin::setupGeneratorMenu()
     if (m_proxyAction) {
         m_menu->addAction(m_proxyAction);
     }
-    if (m_twigAction) {
-        m_menu->addAction(m_twigAction);
-    }
 
     addMenu = qobject_cast<QMenu *>(pCore->window()->factory()->container(QStringLiteral("clip_timeline"), pCore->window()));
     if (addMenu) {
@@ -2034,11 +2024,6 @@ void Bin::setupMenu()
     m_locateAction->setData("locate_clip");
     m_locateAction->setEnabled(false);
     connect(m_locateAction, &QAction::triggered, this, &Bin::slotLocateClip);
-
-    m_twigAction = addAction(QStringLiteral("twig_resource"), i18n("Twig resource"), QIcon::fromTheme(QStringLiteral("kdenlive-add-text-clip")));
-    m_twigAction->setData("twig_resource");
-    m_twigAction->setEnabled(false);
-    connect(m_twigAction, &QAction::triggered, this, &Bin::createTwigCodeDialog);
 
     m_reloadAction =
         addAction(QStringLiteral("reload_clip"), i18n("Reload Clip"), QIcon::fromTheme(QStringLiteral("view-refresh")));
@@ -2952,42 +2937,6 @@ void Bin::slotAddClipExtraData(const QString &id, const QString &key, const QStr
     if (!groupCommand) {
         m_doc->commandStack()->push(command);
     }
-}
-
-void Bin::createTwigCodeDialog(){
-    QModelIndex current = m_proxyModel->selectionModel()->currentIndex();
-    if (!current.isValid()) {
-        return;
-    }
-
-    std::shared_ptr<AbstractProjectItem> item = m_itemModel->getBinItemByIndex(m_proxyModel->mapToSource(current));
-    auto clip = std::static_pointer_cast<ProjectClip>(item);
-    QString id = clip->clipId();
-
-    QString resource = m_doc->getProducerTwigCode(id);
-
-    if (resource.isEmpty())
-    {
-        resource = clip->url();
-    }
-
-    QPointer<TwigCodeDialog> dia = new TwigCodeDialog(QApplication::activeWindow(), resource);
-
-    if (dia->exec() == QDialog::Accepted) {
-        QString output = m_doc->parseTwigCode(dia->selectedText());
-        if (output.isEmpty())
-        {
-            QMessageBox messageBox;
-            messageBox.critical(0, "Error","Failed to parse twig code!");
-            messageBox.setFixedSize(500,200);
-            return;
-        }
-
-        m_doc->addProducerTwigCode(id, dia->selectedText());
-        slotAddClipExtraData(id, "resource", output);
-    }
-
-    delete dia;
 }
 
 void Bin::slotUpdateClipProperties(const QString &id, const QMap<QString, QString> &properties, bool refreshPropertiesPanel)

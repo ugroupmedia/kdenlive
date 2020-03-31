@@ -1372,7 +1372,6 @@ void MainWindow::setupActions()
     act = addAction(QStringLiteral("clip_in_project_tree"), i18n("Clip in Project Bin"), this, SLOT(slotClipInProjectTree()),
                     QIcon::fromTheme(QStringLiteral("go-jump-definition")), QKeySequence(), clipActionCategory);
     act->setEnabled(false);
-
     // "C" as data means this action should only be available for clips - not for compositions
     act->setData('C');
 

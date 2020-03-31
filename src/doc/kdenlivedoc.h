@@ -155,19 +155,10 @@ public:
     QString getAutoProxyProfile();
     /** @brief Returns the number of clips in this project (useful to show loading progress) */
     int clipsCount() const;
-    void preserveTwigCode();
-    QString parseTwigCode(QString input);
-    QString replaceTwigPatterns(QString input);
-    void moveTwigCodeToXml(QDomDocument doc);
-    bool checkNodesEqual(QDomNode left, QDomNode right);
-    void addProducerTwigCode(QString id, QString code);
-    QString getProducerTwigCode(QString id);
-    void relativeToAbsolutePath(QDomDocument doc);
 
 private:
     QUrl m_url;
     QDomDocument m_document;
-    QDomDocument my_document;
     int m_clipsCount;
     /** @brief MLT's root (base path) that is stripped from urls in saved xml */
     QString m_documentRoot;
@@ -194,8 +185,6 @@ private:
     QMap<QString, QString> m_documentProperties;
     QMap<QString, QString> m_documentMetadata;
     std::shared_ptr<MarkerListModel> m_guideModel;
-    QVector<QPair<QDomNode, QString>> m_propertyTwigCode;
-    QMap<QString, QString> m_producerTwigCode;
 
     QString searchFileRecursively(const QDir &dir, const QString &matchSize, const QString &matchHash) const;
 

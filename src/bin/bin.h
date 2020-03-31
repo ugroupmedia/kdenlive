@@ -261,7 +261,6 @@ public:
     void saveZone(const QStringList &info, const QDir &dir);
     /** @brief A bin clip changed (its effects), invalidate preview */
     void invalidateClip(const QString &binId);
-    void createTwigCodeDialog();
 
     // TODO refac: remove this and call directly the function in ProjectItemModel
     void cleanup();
@@ -399,7 +398,6 @@ private:
     Monitor *m_monitor;
     QIcon m_blankThumb;
     QMenu *m_menu;
-    QAction *m_twigAction;
     QAction *m_openAction;
     QAction *m_editAction;
     QAction *m_reloadAction;
