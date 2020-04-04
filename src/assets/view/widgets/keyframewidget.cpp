@@ -359,7 +359,7 @@ void KeyframeWidget::addParameter(const QPersistentModelIndex &index)
         connect(m_monitorHelper, &KeyframeMonitorHelper::updateKeyframeData, this, &KeyframeWidget::slotUpdateKeyframesFromMonitor, Qt::UniqueConnection);
         m_neededScene = MonitorSceneType::MonitorSceneRoto;
     } else {
-        if (m_model->getAssetId() == QLatin1String("frei0r.c0rners")) {
+        if (m_model->getAssetId() == QLatin1String("frei0r.c0rners") || m_model->getAssetId() == QLatin1String("frei0r.cropNwarp")) {
             if (m_neededScene == MonitorSceneDefault && !m_monitorHelper) {
                 m_neededScene = MonitorSceneType::MonitorSceneCorners;
                 m_monitorHelper = new CornersHelper(pCore->getMonitor(m_model->monitorId), m_model, index, this);
