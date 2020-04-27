@@ -37,6 +37,8 @@
 #include "definitions.h"
 #include "gentime.h"
 #include "timecode.h"
+#include <chrono>
+#include <ctime>
 
 class MainWindow;
 class TrackInfo;
@@ -163,6 +165,7 @@ public:
     void addProducerTwigCode(QString id, QString code);
     QString getProducerTwigCode(QString id);
     void relativeToAbsolutePath(QDomDocument doc);
+    QString addDateAndTimeToXml(const QString &scene);
 
 private:
     QUrl m_url;
