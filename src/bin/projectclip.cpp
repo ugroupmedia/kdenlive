@@ -308,7 +308,7 @@ void ProjectClip::reloadProducer(bool refreshOnly, bool audioStreamChanged, bool
         ThumbnailCache::get()->invalidateThumbsForClip(clipId(), false);
         pCore->jobManager()->discardJobs(clipId(), AbstractClipJob::THUMBJOB);
         m_thumbsProducer.reset();
-        pCore->jobManager()->startJob<ThumbJob>({clipId()}, loadjobId, QString(), 150, -1, true, true);
+        pCore->jobManager()->startJob<ThumbJob>({clipId()}, loadjobId, QString(), -1, true, true);
     } else {
         // If another load job is running?
         if (loadjobId > -1) {
@@ -328,7 +328,7 @@ void ProjectClip::reloadProducer(bool refreshOnly, bool audioStreamChanged, bool
             }
             ThumbnailCache::get()->invalidateThumbsForClip(clipId(), reloadAudio);
             int loadJob = pCore->jobManager()->startJob<LoadJob>({clipId()}, loadjobId, QString(), xml);
-            pCore->jobManager()->startJob<ThumbJob>({clipId()}, loadJob, QString(), 150, -1, true, true);
+            pCore->jobManager()->startJob<ThumbJob>({clipId()}, loadJob, QString(), -1, true, true);
             if (audioStreamChanged) {
                 discardAudioThumb();
                 pCore->jobManager()->startJob<AudioThumbJob>({clipId()}, loadjobId, QString());
@@ -800,7 +800,7 @@ std::shared_ptr<Mlt::Producer> ProjectClip::cloneProducer(bool removeEffects)
             qDebug() << "// EFFECT " << ct << " : " << filter->get("mlt_service");
             QString ix = QString::fromLatin1(filter->get("kdenlive_id"));
             if (!ix.isEmpty()) {
-                qDebug() << "/ + + DELTING";
+                qDebug() << "/ + + DELETING";
                 if (prod->detach(*filter) == 0) {
                 } else {
                     ct++;
@@ -884,8 +884,12 @@ const QString ProjectClip::getFileHash()
         fileHash = QCryptographicHash::hash(fileData, QCryptographicHash::Md5);
         break;
     case ClipType::Text:
-    case ClipType::TextTemplate:
         fileData = getProducerProperty(QStringLiteral("xmldata")).toUtf8();
+        fileHash = QCryptographicHash::hash(fileData, QCryptographicHash::Md5);
+        break;
+    case ClipType::TextTemplate:
+        fileData = getProducerProperty(QStringLiteral("resource")).toUtf8();
+        fileData.append(getProducerProperty(QStringLiteral("templatetext")).toUtf8());
         fileHash = QCryptographicHash::hash(fileData, QCryptographicHash::Md5);
         break;
     case ClipType::QText:
@@ -1020,6 +1024,12 @@ void ProjectClip::setProperties(const QMap<QString, QString> &properties, bool r
         emit refreshAnalysisPanel();
     }
     if (properties.contains(QStringLiteral("length")) || properties.contains(QStringLiteral("kdenlive:duration"))) {
+        // Make sure length is >= kdenlive:duration
+        int producerLength = getProducerIntProperty(QStringLiteral("length"));
+        int kdenliveLength = getFramePlaytime();
+        if (producerLength < kdenliveLength) {
+            setProducerProperty(QStringLiteral("length"), kdenliveLength);
+        }
         m_duration = getStringDuration();
         if (auto ptr = m_model.lock())
             std::static_pointer_cast<ProjectItemModel>(ptr)->onItemUpdated(std::static_pointer_cast<ProjectClip>(shared_from_this()),
@@ -1442,7 +1452,7 @@ void ProjectClip::getThumbFromPercent(int percent)
         int id;
         if (pCore->jobManager()->hasPendingJob(m_binId, AbstractClipJob::CACHEJOB, &id)) {
         } else {
-            pCore->jobManager()->startJob<CacheJob>({m_binId}, -1, QString(), 150, 50);
+            pCore->jobManager()->startJob<CacheJob>({m_binId}, -1, QString(), 50);
         }
     }
 }

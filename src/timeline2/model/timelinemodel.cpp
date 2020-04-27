@@ -138,7 +138,7 @@ void TimelineModel::prepareClose()
 {
     requestClearSelection(true);
     QWriteLocker locker(&m_lock);
-    // Unlock all tracks to allow delting clip from tracks
+    // Unlock all tracks to allow deleting clip from tracks
     m_closing = true;
     auto it = m_allTracks.begin();
     while (it != m_allTracks.end()) {
@@ -2268,7 +2268,7 @@ bool TimelineModel::requestTrackInsertion(int position, int &id, const QString &
         if (previousId > -1) {
             for (auto &compo : m_allCompositions) {
                 if (compo.second->getATrack() == position && compo.second->getForcedTrack() == -1) {
-                    compo.second->setATrack(position + 1, previousId);
+                    compo.second->setATrack(position + 1, -1);
                 }
             }
         }

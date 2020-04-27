@@ -321,6 +321,7 @@ Rectangle {
                 delegate:
                 Item {
                     anchors.fill: parent
+                    visible: markerBase.x >= 0 && markerBase.x < clipRoot.width
                     Rectangle {
                         id: markerBase
                         width: 1
@@ -825,9 +826,6 @@ Rectangle {
                 root.autoScrolling = timeline.autoScroll
                 anchors.right = parent.right
                 var duration = clipRoot.fadeOut
-                if (duration > 0) {
-                    duration += 1
-                }
                 timeline.adjustFade(clipRoot.clipId, 'fadeout', duration, startFadeOut)
                 bubbleHelp.hide()
             }
@@ -840,7 +838,7 @@ Rectangle {
                         lastDuration = duration
                         timeline.adjustFade(clipRoot.clipId, 'fadeout', duration, -1)
                         // Show fade duration as time in a "bubble" help.
-                        var s = timeline.simplifiedTC(clipRoot.fadeOut + (clipRoot.fadeOut > 0 ? 1 : 0))
+                        var s = timeline.simplifiedTC(clipRoot.fadeOut)
                         bubbleHelp.show(clipRoot.x + x, parentTrack.y + parentTrack.height, s)
                     }
                 }

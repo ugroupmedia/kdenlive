@@ -164,7 +164,7 @@ Monitor::Monitor(Kdenlive::MonitorId id, MonitorManager *manager, QWidget *paren
     m_videoWidget = QWidget::createWindowContainer(qobject_cast<QWindow *>(m_glMonitor));
     m_videoWidget->setAcceptDrops(true);
     auto *leventEater = new QuickEventEater(this);
-    m_glWidget->installEventFilter(leventEater);
+    m_videoWidget->installEventFilter(leventEater);
     connect(leventEater, &QuickEventEater::addEffect, this, &Monitor::slotAddEffect);
 
     m_qmlManager = new QmlManager(m_glMonitor);
@@ -776,10 +776,11 @@ void Monitor::slotSwitchFullScreen(bool minimizeOnly)
         // Move monitor widget to the second screen (one screen for Kdenlive, the other one for the Monitor widget)
         if (qApp->screens().count() > 1) {
             for (auto screen : qApp->screens()) {
-                if (screen != qApp->screenAt(pCore->window()->geometry().center())) {
-                    QRect rect = screen->availableGeometry();
+                QRect screenRect = screen->availableGeometry();
+                if (!screenRect.contains(pCore->window()->geometry().center())) {
                     m_glWidget->setParent(nullptr);
-                    m_glWidget->move(this->parentWidget()->mapFromGlobal(rect.center()));
+                    m_glWidget->move(this->parentWidget()->mapFromGlobal(screenRect.center()));
+                    m_glWidget->setGeometry(screenRect);
                     break;
                 }
             }
@@ -787,6 +788,7 @@ void Monitor::slotSwitchFullScreen(bool minimizeOnly)
             m_glWidget->setParent(nullptr);
         }
         m_glWidget->showFullScreen();
+        qApp->activeWindow()->setFocus();
     } else {
         m_glWidget->showNormal();
         auto *lay = (QVBoxLayout *)layout();
@@ -1355,9 +1357,9 @@ void Monitor::slotOpenClip(const std::shared_ptr<ProjectClip> &controller, int i
             // we are in record mode, don't display clip
             return;
         }
+        m_timePos->setRange(0, (int)m_controller->frameDuration() - 1);
         m_glMonitor->setRulerInfo((int)m_controller->frameDuration() - 1, controller->getMarkerModel());
         loadQmlScene(MonitorSceneDefault);
-        m_timePos->setRange(0, (int)m_controller->frameDuration() - 1);
         updateMarkers();
         connect(m_glMonitor->getControllerProxy(), &MonitorProxy::addSnap, this, &Monitor::addSnapPoint, Qt::DirectConnection);
         connect(m_glMonitor->getControllerProxy(), &MonitorProxy::removeSnap, this, &Monitor::removeSnapPoint, Qt::DirectConnection);

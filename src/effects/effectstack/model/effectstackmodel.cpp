@@ -418,6 +418,8 @@ bool EffectStackModel::copyEffect(const std::shared_ptr<AbstractEffectItem> &sou
 bool EffectStackModel::appendEffect(const QString &effectId, bool makeCurrent)
 {
     QWriteLocker locker(&m_lock);
+    std::unordered_set<int> previousFadeIn = m_fadeIns;
+    std::unordered_set<int> previousFadeOut = m_fadeOuts;
     auto effect = EffectItemModel::construct(effectId, shared_from_this());
     PlaylistState::ClipState state = pCore->getItemState(m_ownerId);
     if (effect->isAudio()) {
@@ -445,7 +447,6 @@ bool EffectStackModel::appendEffect(const QString &effectId, bool makeCurrent)
     if (res) {
         int inFades = 0;
         int outFades = 0;
-
         if (effectId == QLatin1String("fadein") || effectId == QLatin1String("fade_from_black")) {
             int duration = effect->filter().get_length() - 1;
             int in = pCore->getItemIn(m_ownerId);
@@ -473,9 +474,23 @@ bool EffectStackModel::appendEffect(const QString &effectId, bool makeCurrent)
             emit dataChanged(QModelIndex(), QModelIndex(), roles);
             return true;
         };
+        Fun update_undo = [this, inFades, outFades, previousFadeIn, previousFadeOut]() {
+            // TODO: only update if effect is fade or keyframe
+            QVector<int> roles = {TimelineModel::EffectNamesRole};
+            if (inFades > 0) {
+                m_fadeIns = previousFadeIn;
+                roles << TimelineModel::FadeInRole;
+            } else if (outFades > 0) {
+                m_fadeOuts = previousFadeOut;
+                roles << TimelineModel::FadeOutRole;
+            }
+            pCore->updateItemKeyframes(m_ownerId);
+            emit dataChanged(QModelIndex(), QModelIndex(), roles);
+            return true;
+        };
         update();
         PUSH_LAMBDA(update, redo);
-        PUSH_LAMBDA(update, undo);
+        PUSH_LAMBDA(update_undo, undo);
         PUSH_UNDO(undo, redo, i18n("Add effect %1", EffectsRepository::get()->getName(effectId)));
     } else if (makeCurrent) {
         if (auto srvPtr = m_masterService.lock()) {
@@ -679,7 +694,7 @@ bool EffectStackModel::adjustFadeLength(int duration, bool fromStart, bool audio
             in = ptr->get_int("in");
         }
         int itemDuration = pCore->getItemDuration(m_ownerId);
-        int out = in + itemDuration;
+        int out = in + itemDuration - 1;
         int oldDuration = -1;
         QList<QModelIndex> indexes;
         for (int i = 0; i < rootItem->childCount(); ++i) {
@@ -688,7 +703,7 @@ bool EffectStackModel::adjustFadeLength(int duration, bool fromStart, bool audio
                 if (oldDuration == -1) {
                     oldDuration = effect->filter().get_length();
                 }
-                effect->filter().set("out", out - 1);
+                effect->filter().set("out", out);
                 duration = qMin(itemDuration, duration);
                 effect->filter().set("in", out - duration);
                 indexes << getIndexFromItem(effect);
