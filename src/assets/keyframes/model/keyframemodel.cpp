@@ -134,6 +134,21 @@ bool KeyframeModel::removeKeyframe(GenTime pos, Fun &undo, Fun &redo, bool notif
     return false;
 }
 
+bool KeyframeModel::duplicateKeyframe(GenTime srcPos, GenTime dstPos, Fun &undo, Fun &redo)
+{
+    QWriteLocker locker(&m_lock);
+    Q_ASSERT(m_keyframeList.count(srcPos) > 0);
+    KeyframeType oldType = m_keyframeList[srcPos].first;
+    QVariant oldValue = m_keyframeList[srcPos].second;
+    Fun local_redo = addKeyframe_lambda(dstPos, oldType, oldValue, true);
+    Fun local_undo = deleteKeyframe_lambda(dstPos, true);
+    if (local_redo()) {
+        UPDATE_UNDO_REDO(local_redo, local_undo, undo, redo);
+        return true;
+    }
+    return false;
+}
+
 bool KeyframeModel::removeKeyframe(int frame)
 {
     GenTime pos(frame, pCore->getCurrentFps());
@@ -175,6 +190,8 @@ bool KeyframeModel::moveKeyframe(GenTime oldPos, GenTime pos, QVariant newVal, F
         return updateKeyframe(pos, result);
     }
     if (oldPos != pos && hasKeyframe(pos)) {
+        // Move rejected, another keyframe is here
+        qDebug()<<"==== MOVE REJECTED!!";
         return false;
     }
     KeyframeType oldType = m_keyframeList[oldPos].first;
@@ -234,7 +251,7 @@ bool KeyframeModel::offsetKeyframes(int oldPos, int pos, bool logUndo)
         times << m.first;
     }
     bool res = true;
-    for (const auto &t : times) {
+    for (const auto &t : qAsConst(times)) {
         res &= moveKeyframe(t, t + diff, QVariant(), undo, redo);
     }
     if (res && logUndo) {
@@ -296,16 +313,20 @@ bool KeyframeModel::updateKeyframe(int pos, double newVal)
 {
     GenTime Pos(pos, pCore->getCurrentFps());
     if (auto ptr = m_model.lock()) {
-        double min = ptr->data(m_index, AssetParameterModel::MinRole).toDouble();
-        double max = ptr->data(m_index, AssetParameterModel::MaxRole).toDouble();
+        double min = ptr->data(m_index, AssetParameterModel::VisualMinRole).toDouble();
+        double max = ptr->data(m_index, AssetParameterModel::VisualMaxRole).toDouble();
+        if (qFuzzyIsNull(min) && qFuzzyIsNull(max)) {
+            min = ptr->data(m_index, AssetParameterModel::MinRole).toDouble();
+            max = ptr->data(m_index, AssetParameterModel::MaxRole).toDouble();
+        }
         double factor = ptr->data(m_index, AssetParameterModel::FactorRole).toDouble();
         double norm = ptr->data(m_index, AssetParameterModel::DefaultRole).toDouble();
         int logRole = ptr->data(m_index, AssetParameterModel::ScaleRole).toInt();
         double realValue;
         if (logRole == -1) {
-            // Logarythmic scale for lower than norm values
+            // Logarythmic scale
             if (newVal >= 0.5) {
-                realValue = norm + (2 * (newVal - 0.5) * (max / factor - norm));
+                realValue = norm + pow(2 * (newVal - 0.5), 10.0 / 6) * (max / factor - norm);
             } else {
                 realValue = norm - pow(2 * (0.5 - newVal), 10.0 / 6) * (norm - min / factor);
             }
@@ -442,24 +463,33 @@ QVariant KeyframeModel::data(const QModelIndex &index, int role) const
     case NormalizedValueRole: {
         if (m_paramType == ParamType::AnimatedRect) {
             const QString &data = it->second.second.toString();
-            QLocale locale;
-            return locale.toDouble(data.section(QLatin1Char(' '), -1));
+            bool ok;
+            double converted = data.section(QLatin1Char(' '), -1).toDouble(&ok);
+            if (!ok) {
+                qDebug() << "QLocale: Could not convert animated rect opacity" << data;
+            }
+            return converted;
         }
         double val = it->second.second.toDouble();
         if (auto ptr = m_model.lock()) {
             Q_ASSERT(m_index.isValid());
-            double min = ptr->data(m_index, AssetParameterModel::MinRole).toDouble();
-            double max = ptr->data(m_index, AssetParameterModel::MaxRole).toDouble();
+            double min = ptr->data(m_index, AssetParameterModel::VisualMinRole).toDouble();
+            double max = ptr->data(m_index, AssetParameterModel::VisualMaxRole).toDouble();
+            if (qFuzzyIsNull(min) && qFuzzyIsNull(max)) {
+                min = ptr->data(m_index, AssetParameterModel::MinRole).toDouble();
+                max = ptr->data(m_index, AssetParameterModel::MaxRole).toDouble();
+            }
             double factor = ptr->data(m_index, AssetParameterModel::FactorRole).toDouble();
             double norm = ptr->data(m_index, AssetParameterModel::DefaultRole).toDouble();
             int logRole = ptr->data(m_index, AssetParameterModel::ScaleRole).toInt();
             double linear = val * factor;
             if (logRole == -1) {
-                // Logarythmic scale for lower than norm values
-                if (linear >= norm) {
-                    return 0.5 + (linear - norm) / (max * factor - norm) * 0.5;
-                }
+                // Logarythmic scale
                 // transform current value to 0..1 scale
+                if (linear >= norm) {
+                    double scaled = (linear - norm) / (max * factor - norm);
+                    return 0.5 + pow(scaled, 0.6) * 0.5;
+                }
                 double scaled = (linear - norm) / (min * factor - norm);
                 // Log scale
                 return 0.5 - pow(scaled, 0.6) * 0.5;
@@ -698,13 +728,13 @@ QString KeyframeModel::getRotoProperty() const
 {
     QJsonDocument doc;
     if (auto ptr = m_model.lock()) {
-        int in = 0; // ptr->data(m_index, AssetParameterModel::ParentInRole).toInt();
-        int out = ptr->data(m_index, AssetParameterModel::ParentDurationRole).toInt();
-        QMap<QString, QVariant> map;
+        int in = ptr->data(m_index, AssetParameterModel::ParentInRole).toInt();
+        int out = in + ptr->data(m_index, AssetParameterModel::ParentDurationRole).toInt();
+        QVariantMap map;
         for (const auto &keyframe : m_keyframeList) {
-            map.insert(QString::number(in + keyframe.first.frames(pCore->getCurrentFps())).rightJustified(log10((double)out) + 1, '0'), keyframe.second.second);
+            map.insert(QString::number(keyframe.first.frames(pCore->getCurrentFps())).rightJustified(log10((double)out) + 1, '0'), keyframe.second.second);
         }
-        doc = QJsonDocument::fromVariant(QVariant(map));
+        doc = QJsonDocument::fromVariant(map);
     }
     return doc.toJson();
 }
@@ -713,7 +743,6 @@ void KeyframeModel::parseAnimProperty(const QString &prop)
 {
     Fun undo = []() { return true; };
     Fun redo = []() { return true; };
-    QLocale locale;
     disconnect(this, &KeyframeModel::modelChanged, this, &KeyframeModel::sendModification);
     removeAllKeyframes(undo, redo);
     int in = 0;
@@ -749,7 +778,7 @@ void KeyframeModel::parseAnimProperty(const QString &prop)
         case ParamType::AnimatedRect: {
             mlt_rect rect = mlt_prop.anim_get_rect("key", frame);
             if (useOpacity) {
-                value = QVariant(QStringLiteral("%1 %2 %3 %4 %5").arg(rect.x).arg(rect.y).arg(rect.w).arg(rect.h).arg(locale.toString(rect.o)));
+                value = QVariant(QStringLiteral("%1 %2 %3 %4 %5").arg(rect.x).arg(rect.y).arg(rect.w).arg(rect.h).arg(rect.o, 0, 'f'));
             } else {
                 value = QVariant(QStringLiteral("%1 %2 %3 %4").arg(rect.x).arg(rect.y).arg(rect.w).arg(rect.h));
             }
@@ -782,7 +811,6 @@ void KeyframeModel::resetAnimProperty(const QString &prop)
     removeAllKeyframes(undo, redo);
 
     Mlt::Properties mlt_prop;
-    QLocale locale;
     int in = 0;
     bool useOpacity = true;
     if (auto ptr = m_model.lock()) {
@@ -812,7 +840,7 @@ void KeyframeModel::resetAnimProperty(const QString &prop)
         case ParamType::AnimatedRect: {
             mlt_rect rect = mlt_prop.anim_get_rect("key", frame);
             if (useOpacity) {
-                value = QVariant(QStringLiteral("%1 %2 %3 %4 %5").arg(rect.x).arg(rect.y).arg(rect.w).arg(rect.h).arg(locale.toString(rect.o)));
+                value = QVariant(QStringLiteral("%1 %2 %3 %4 %5").arg(rect.x).arg(rect.y).arg(rect.w).arg(rect.h).arg(QString::number(rect.o, 'f')));
             } else {
                 value = QVariant(QStringLiteral("%1 %2 %3 %4").arg(rect.x).arg(rect.y).arg(rect.w).arg(rect.h));
             }
@@ -858,7 +886,6 @@ void KeyframeModel::parseRotoProperty(const QString &prop)
     QJsonDocument doc = QJsonDocument::fromJson(prop.toLatin1(), &jsonError);
     QVariant data = doc.toVariant();
     if (data.canConvert(QVariant::Map)) {
-        QList<int> keyframes;
         QMap<QString, QVariant> map = data.toMap();
         QMap<QString, QVariant>::const_iterator i = map.constBegin();
         while (i != map.constEnd()) {
@@ -877,10 +904,8 @@ QVariant KeyframeModel::getInterpolatedValue(int p) const
 QVariant KeyframeModel::updateInterpolated(const QVariant &interpValue, double val)
 {
     QStringList vals = interpValue.toString().split(QLatin1Char(' '));
-    QLocale locale;
-    locale.setNumberOptions(QLocale::OmitGroupSeparator);
     if (!vals.isEmpty()) {
-        vals[vals.size() - 1] = locale.toString(val);
+        vals[vals.size() - 1] = QString::number(val, 'f');
     }
     return vals.join(QLatin1Char(' '));
 }
@@ -888,16 +913,20 @@ QVariant KeyframeModel::updateInterpolated(const QVariant &interpValue, double v
 QVariant KeyframeModel::getNormalizedValue(double newVal) const
 {
     if (auto ptr = m_model.lock()) {
-        double min = ptr->data(m_index, AssetParameterModel::MinRole).toDouble();
-        double max = ptr->data(m_index, AssetParameterModel::MaxRole).toDouble();
+        double min = ptr->data(m_index, AssetParameterModel::VisualMinRole).toDouble();
+        double max = ptr->data(m_index, AssetParameterModel::VisualMaxRole).toDouble();
+        if (qFuzzyIsNull(min) && qFuzzyIsNull(max)) {
+            min = ptr->data(m_index, AssetParameterModel::MinRole).toDouble();
+            max = ptr->data(m_index, AssetParameterModel::MaxRole).toDouble();
+        }
         double factor = ptr->data(m_index, AssetParameterModel::FactorRole).toDouble();
         double norm = ptr->data(m_index, AssetParameterModel::DefaultRole).toDouble();
         int logRole = ptr->data(m_index, AssetParameterModel::ScaleRole).toInt();
         double realValue;
         if (logRole == -1) {
-            // Logarythmic scale for lower than norm values
+            // Logarythmic scale
             if (newVal >= 0.5) {
-                realValue = norm + (2 * (newVal - 0.5) * (max / factor - norm));
+                realValue = norm + pow(2 * (newVal - 0.5), 10.0 / 6) * (max / factor - norm);
             } else {
                 realValue = norm - pow(2 * (0.5 - newVal), 10.0 / 6) * (norm - min / factor);
             }
@@ -917,76 +946,51 @@ QVariant KeyframeModel::getInterpolatedValue(const GenTime &pos) const
     if (m_keyframeList.size() == 0) {
         return QVariant();
     }
-    auto next = m_keyframeList.upper_bound(pos);
-    if (next == m_keyframeList.cbegin()) {
-        return (m_keyframeList.cbegin())->second.second;
-    } else if (next == m_keyframeList.cend()) {
-        auto it = m_keyframeList.cend();
-        --it;
-        return it->second.second;
-    }
-    auto prev = next;
-    --prev;
-    // We now have surrounding keyframes, we use mlt to compute the value
-    Mlt::Properties prop;
-    bool useOpacity = true;
+    Mlt::Properties mlt_prop;
+    QString animData;
+    int out = 0;
+    bool useOpacity = false;
     if (auto ptr = m_model.lock()) {
-        ptr->passProperties(prop);
-        if (m_paramType == ParamType::AnimatedRect) {
-            useOpacity = ptr->data(m_index, AssetParameterModel::OpacityRole).toBool();
-        }
+        ptr->passProperties(mlt_prop);
+        ptr->data(m_index, AssetParameterModel::ParentInRole).toInt();
+        out = ptr->data(m_index, AssetParameterModel::ParentDurationRole).toInt();
+        useOpacity = ptr->data(m_index, AssetParameterModel::OpacityRole).toBool();
+        animData = ptr->data(m_index, AssetParameterModel::ValueRole).toString();
     }
-    QLocale locale;
-    int p = pos.frames(pCore->getCurrentFps());
     if (m_paramType == ParamType::KeyframeParam) {
-        prop.anim_set("keyframe", prev->second.second.toDouble(), prev->first.frames(pCore->getCurrentFps()), next->first.frames(pCore->getCurrentFps()),
-                      convertToMltType(prev->second.first));
-        prop.anim_set("keyframe", next->second.second.toDouble(), next->first.frames(pCore->getCurrentFps()), next->first.frames(pCore->getCurrentFps()),
-                      convertToMltType(next->second.first));
-        return QVariant(prop.anim_get_double("keyframe", p));
+        if (!animData.isEmpty()) {
+            mlt_prop.set("key", animData.toUtf8().constData());
+            // This is a fake query to force the animation to be parsed
+            (void)mlt_prop.anim_get_double("key", 0, out);
+            return QVariant(mlt_prop.anim_get_double("key", pos.frames(pCore->getCurrentFps())));
+        }
+        return QVariant();
     } else if (m_paramType == ParamType::AnimatedRect) {
-        QStringList vals = prev->second.second.toString().split(QLatin1Char(' '));
-        if (vals.count() >= 4) {
-            mlt_rect rect;
-            rect.x = vals.at(0).toInt();
-            rect.y = vals.at(1).toInt();
-            rect.w = vals.at(2).toInt();
-            rect.h = vals.at(3).toInt();
+        if (!animData.isEmpty()) {
+            mlt_prop.set("key", animData.toUtf8().constData());
+            // This is a fake query to force the animation to be parsed
+            (void)mlt_prop.anim_get_double("key", 0, out);
+            mlt_rect rect = mlt_prop.anim_get_rect("key", pos.frames(pCore->getCurrentFps()));
+            QString res = QStringLiteral("%1 %2 %3 %4").arg((int)rect.x).arg((int)rect.y).arg((int)rect.w).arg((int)rect.h);
             if (useOpacity) {
-                if (vals.count()) {
-                    rect.o = locale.toDouble(vals.at(4));
-                } else {
-                    rect.o = 1;
-                }
+                res.append(QStringLiteral(" %1").arg(QString::number(rect.o, 'f')));
             }
-            prop.anim_set("keyframe", rect, prev->first.frames(pCore->getCurrentFps()), next->first.frames(pCore->getCurrentFps()),
-                          convertToMltType(prev->second.first));
+            return QVariant(res);
         }
-        vals = next->second.second.toString().split(QLatin1Char(' '));
-        if (vals.count() >= 4) {
-            mlt_rect rect;
-            rect.x = vals.at(0).toInt();
-            rect.y = vals.at(1).toInt();
-            rect.w = vals.at(2).toInt();
-            rect.h = vals.at(3).toInt();
-            if (useOpacity) {
-                if (vals.count() > 4) {
-                    rect.o = locale.toDouble(vals.at(4));
-                } else {
-                    rect.o = 1;
-                }
-            }
-            prop.anim_set("keyframe", rect, next->first.frames(pCore->getCurrentFps()), next->first.frames(pCore->getCurrentFps()),
-                          convertToMltType(next->second.first));
-        }
-        mlt_rect rect = prop.anim_get_rect("keyframe", p);
-        QString res = QStringLiteral("%1 %2 %3 %4").arg((int)rect.x).arg((int)rect.y).arg((int)rect.w).arg((int)rect.h);
-        if (useOpacity) {
-            res.append(QStringLiteral(" %1").arg(locale.toString(rect.o)));
-        }
-        return QVariant(res);
+        return QVariant();
     } else if (m_paramType == ParamType::Roto_spline) {
         // interpolate
+        auto next = m_keyframeList.upper_bound(pos);
+        if (next == m_keyframeList.cbegin()) {
+            return (m_keyframeList.cbegin())->second.second;
+        } else if (next == m_keyframeList.cend()) {
+            auto it = m_keyframeList.cend();
+            --it;
+            return it->second.second;
+        }
+        auto prev = next;
+        --prev;
+
         QSize frame = pCore->getCurrentFrameSize();
         QList<BPoint> p1 = RotoHelper::getPoints(prev->second.second, frame);
         QList<BPoint> p2 = RotoHelper::getPoints(next->second.second, frame);
@@ -995,7 +999,7 @@ QVariant KeyframeModel::getInterpolatedValue(const GenTime &pos) const
         // - equal to 1 on next keyframe
         qreal relPos = 0;
         if (next->first != prev->first) {
-            relPos = (p - prev->first.frames(pCore->getCurrentFps())) / (qreal)(((next->first - prev->first).frames(pCore->getCurrentFps())));
+            relPos = (pos.frames(pCore->getCurrentFps()) - prev->first.frames(pCore->getCurrentFps())) / (qreal)(((next->first - prev->first).frames(pCore->getCurrentFps())));
         }
         int count = qMin(p1.count(), p2.count());
         QList<QVariant> vlist;

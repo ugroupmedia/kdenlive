@@ -1,12 +1,24 @@
 ![](data/pics/kdenlive-logo.png)
 
+| Jenkins CI Name | Master | Stable |
+| --------------- | ------ | ------ |
+| OpenSuse Qt 5.14 | [![Build Status](https://build.kde.org/job/Applications/job/kdenlive/job/kf5-qt5%20SUSEQt5.14/badge/icon)](https://build.kde.org/job/Applications/job/kdenlive/job/kf5-qt5%20SUSEQt5.14//) |[![Build Status](https://build.kde.org/job/Applications/job/kdenlive/job/stable-kf5-qt5%20SUSEQt5.14/badge/icon)](https://build.kde.org/job/Applications/job/kdenlive/job/stable-kf5-qt5%20SUSEQt5.14/)|
+| FreeBSD Qt 5.15 | [![Build Status](https://build.kde.org/job/Applications/job/kdenlive/job/kf5-qt5%20FreeBSDQt5.15/badge/icon)](https://build.kde.org/job/Applications/job/kdenlive/job/kf5-qt5%20FreeBSDQt5.15/) |[![Build Status](https://build.kde.org/job/Applications/job/kdenlive/job/stable-kf5-qt5%20FreeBSDQt5.15/badge/icon)](https://build.kde.org/job/Applications/job/kdenlive/job/stable-kf5-qt5%20FreeBSDQt5.15/)|
+
 # About Kdenlive
 
-[Kdenlive](https://kdenlive.org) is a Free and Open Source video editing application, based on MLT Framework and KDE Frameworks 5. It is distributed under the GNU General Public Licence Version 2.
+[Kdenlive](https://kdenlive.org) is a Free and Open Source video editing application, based on MLT Framework and KDE Frameworks 5. It is distributed under the [GNU General Public License Version 2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html).
 
 # Building from source
 
 [Instructions to build Kdenlive](https://community.kde.org/Kdenlive/Development) are available on the KDE wiki.
+
+# Testing Kdenlive via Nightly Builds
+
+- AppImage (Linux) = https://binary-factory.kde.org/job/Kdenlive_Nightly_Appimage_Build/
+- Windows = https://binary-factory.kde.org/job/Kdenlive_Nightly_mingw64/
+
+*Note * - nightly/daily builds are not meant to be used in production.*
 
 # Contributing to Kdenlive
 
@@ -15,7 +27,7 @@ Please note that Kdenlive's Github repo is just a mirror: see [the detailed expl
 We welcome all feedback and offers for help!
 
 * Talk about us!
-* [Report bugs](https://bugs.kde.org) you encounter (if not already done)
+* [Report bugs](https://kdenlive.org/en/bug-reports/) you encounter (if not already done)
 * Help other users [on the forum](http://forum.kde.org/viewforum.php?f=262) and bug tracker
 * [Help to fill the manual](http://userbase.kde.org/Kdenlive)
 * Complete and check [application and documentation translation](http://l10n.kde.org)

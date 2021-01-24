@@ -33,7 +33,7 @@ ProjectFolder::ProjectFolder(const QString &id, const QString &name, const std::
     : AbstractProjectItem(AbstractProjectItem::FolderItem, id, model)
 {
     m_name = name;
-    m_clipStatus = StatusReady;
+    m_clipStatus = FileStatus::StatusReady;
     m_thumbnail = QIcon::fromTheme(QStringLiteral("folder"));
 }
 
@@ -84,6 +84,25 @@ QList<std::shared_ptr<ProjectClip>> ProjectFolder::childClips()
         }
     }
     return allChildren;
+}
+
+QString ProjectFolder::childByHash(const QString &hash)
+{
+    QList<std::shared_ptr<ProjectClip>> allChildren;
+    for (int i = 0; i < childCount(); ++i) {
+        std::shared_ptr<AbstractProjectItem> childItem = std::static_pointer_cast<AbstractProjectItem>(child(i));
+        if (childItem->itemType() == ClipItem) {
+            allChildren << std::static_pointer_cast<ProjectClip>(childItem);
+        } else if (childItem->itemType() == FolderItem) {
+            allChildren << std::static_pointer_cast<ProjectFolder>(childItem)->childClips();
+        }
+    }
+    for (auto &clip : allChildren) {
+        if (clip->statusReady() && clip->hash() == hash) {
+            return clip->clipId();
+        }
+    }
+    return QString();
 }
 
 bool ProjectFolder::hasChildClips() const

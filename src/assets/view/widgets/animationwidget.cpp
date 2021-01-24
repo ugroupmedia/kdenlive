@@ -82,7 +82,7 @@ AnimationWidget::AnimationWidget(std::shared_ptr<AssetParameterModel> model, QMo
     }
     m_monitorSize = pCore->getCurrentFrameSize();
     m_monitor = pCore->getMonitor(m_model->monitorId);
-    m_timePos = new TimecodeDisplay(m_monitor->timecode(), this);
+    m_timePos = new TimecodeDisplay(pCore->timecode(), this);
     m_ruler = new AnimKeyframeRuler(0, m_outPoint - m_inPoint, this);
     connect(m_ruler, &AnimKeyframeRuler::addKeyframe, this, &AnimationWidget::slotAddKeyframe);
     connect(m_ruler, &AnimKeyframeRuler::removeKeyframe, this, &AnimationWidget::slotDeleteKeyframe);
@@ -1070,8 +1070,6 @@ const QMap<QString, QString> AnimationWidget::getAnimation()
             int pos;
             mlt_keyframe_type type;
             QString key;
-            QLocale locale;
-            locale.setNumberOptions(QLocale::OmitGroupSeparator);
             QStringList result;
             int duration = m_outPoint;
             for (int j = 0; j < m_animController.key_count(); ++j) {
@@ -1092,7 +1090,7 @@ const QMap<QString, QString> AnimationWidget::getAnimation()
                     key.append(QStringLiteral("="));
                     break;
                 }
-                key.append(locale.toString(val));
+                key.append(QString::number(val, 'f'));
                 result << key;
             }
             animationResults.insert(i.key(), result.join(QLatin1Char(';')));

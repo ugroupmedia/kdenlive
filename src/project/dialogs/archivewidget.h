@@ -21,6 +21,7 @@
 #define ARCHIVEWIDGET_H
 
 #include "ui_archivewidget_ui.h"
+#include "timeline2/model/timelinemodel.hpp"
 
 #include <KIO/CopyJob>
 #include <QTemporaryFile>
@@ -41,13 +42,12 @@ class KArchive;
  */
 
 class KMessageWidget;
-
 class ArchiveWidget : public QDialog, public Ui::ArchiveWidget_UI
 {
     Q_OBJECT
 
 public:
-    ArchiveWidget(const QString &projectName, const QDomDocument &doc, const QStringList &luma_list, QWidget *parent = nullptr);
+    ArchiveWidget(const QString &projectName, const QString xmlData, const QStringList &luma_list, QWidget *parent = nullptr);
     // Constructor for extracting widget
     explicit ArchiveWidget(QUrl url, QWidget *parent = nullptr);
     ~ArchiveWidget() override;
@@ -58,12 +58,12 @@ private slots:
     void slotCheckSpace();
     bool slotStartArchiving(bool firstPass = true);
     void slotArchivingFinished(KJob *job = nullptr, bool finished = false);
-    void slotArchivingProgress(KJob *, KIO::filesize_t);
+    void slotArchivingProgress(KJob *, qulonglong);
     void done(int r) Q_DECL_OVERRIDE;
     bool closeAccepted();
     void createArchive();
-    void slotArchivingProgress(int);
-    void slotArchivingFinished(bool result);
+    void slotArchivingIntProgress(int);
+    void slotArchivingBoolFinished(bool result);
     void slotStartExtracting();
     void doExtracting();
     void slotExtractingFinished();
@@ -73,16 +73,18 @@ private slots:
     void slotDisplayMessage(const QString &icon, const QString &text);
     void slotJobResult(bool success, const QString &text);
     void slotProxyOnly(int onlyProxy);
+    void onlyTimelineItems(int onlyTimeline);
 
 protected:
     void closeEvent(QCloseEvent *e) override;
 
 private:
-    KIO::filesize_t m_requestedSize;
+    KIO::filesize_t m_requestedSize, m_timelineSize;
     KIO::CopyJob *m_copyJob;
     QMap<QUrl, QUrl> m_duplicateFiles;
     QMap<QUrl, QUrl> m_replacementList;
     QString m_name;
+    QString m_archiveName;
     QDomDocument m_doc;
     QTemporaryFile *m_temp;
     bool m_abortArchive;

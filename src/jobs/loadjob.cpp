@@ -31,7 +31,10 @@
 #include "macros.hpp"
 #include "profiles/profilemodel.hpp"
 #include "project/dialogs/slideshowclip.h"
+#include "effects/effectsrepository.hpp"
+#include "effects/effectstack/model/effectstackmodel.hpp"
 #include "monitor/monitor.h"
+
 #include "xml/xml.hpp"
 #include <KMessageWidget>
 #include <QMimeDatabase>
@@ -40,7 +43,7 @@
 #include <mlt++/MltProfile.h>
 
 LoadJob::LoadJob(const QString &binId, const QDomElement &xml, const std::function<void()> &readyCallBack)
-    : AbstractClipJob(LOADJOB, binId)
+    : AbstractClipJob(LOADJOB, binId, {ObjectType::BinClip, binId.toInt()})
     , m_xml(xml)
     , m_readyCallBack(readyCallBack)
 {
@@ -75,6 +78,9 @@ ClipType::ProducerType getTypeForService(const QString &id, const QString &path)
     }
     if (id == QLatin1String("webvfx")) {
         return ClipType::WebVfx;
+    }
+    if (id == QLatin1String("qml")) {
+        return ClipType::Qml;
     }
     return ClipType::Unknown;
 }
@@ -129,8 +135,9 @@ std::shared_ptr<Mlt::Producer> LoadJob::loadPlaylist(QString &resource)
         qDebug() << "////// ERROR, CANNOT LOAD SELECTED PLAYLIST: " << resource;
         return nullptr;
     }
-    std::unique_ptr<ProfileInfo> prof(new ProfileParam(xmlProfile.get()));
-    if (static_cast<ProfileInfo*>(pCore->getCurrentProfile().get()) == prof.get()) {
+    std::unique_ptr<ProfileParam> clipProfile(new ProfileParam(xmlProfile.get()));
+    std::unique_ptr<ProfileParam> projectProfile(new ProfileParam(pCore->getCurrentProfile().get()));
+    if (*clipProfile.get() == *projectProfile.get()) {
         // We can use the "xml" producer since profile is the same (using it with different profiles corrupts the project.
         // Beware that "consumer" currently crashes on audio mixes!
         //resource.prepend(QStringLiteral("xml:"));
@@ -138,11 +145,14 @@ std::shared_ptr<Mlt::Producer> LoadJob::loadPlaylist(QString &resource)
         // This is currently crashing so I guess we'd better reject it for now
         if (!pCore->getCurrentProfile()->isCompatible(xmlProfile.get())) {
             m_errorMessage.append(i18n("Playlist has a different framerate (%1/%2fps), not recommended.", xmlProfile->frame_rate_num(), xmlProfile->frame_rate_den()));
+            QString loader = resource;
+            loader.prepend(QStringLiteral("consumer:"));
+            pCore->getCurrentProfile()->set_explicit(1);
+            return std::make_shared<Mlt::Producer>(pCore->getCurrentProfile()->profile(), loader.toUtf8().constData());
+        } else {
+            m_errorMessage.append(i18n("No matching profile"));
+            return nullptr;
         }
-        QString loader = resource;
-        loader.prepend(QStringLiteral("consumer:"));
-        pCore->getCurrentProfile()->set_explicit(1);
-        return std::make_shared<Mlt::Producer>(pCore->getCurrentProfile()->profile(), loader.toUtf8().constData());
     }
     pCore->getCurrentProfile()->set_explicit(1);
     return std::make_shared<Mlt::Producer>(pCore->getCurrentProfile()->profile(), "xml", resource.toUtf8().constData());
@@ -306,7 +316,7 @@ bool LoadJob::startJob()
                 if (producerLength > 0) {
                     duration = producerLength;
                 } else {
-                    duration = pCore->currentDoc()->getFramePos(KdenliveSettings::title_duration());
+                    duration = pCore->getDurationFromString(KdenliveSettings::title_duration());
                 }
             }
             if (producerLength <= 0) {
@@ -320,13 +330,31 @@ bool LoadJob::startJob()
     case ClipType::QText:
         m_producer = loadResource(m_resource, QStringLiteral("qtext:"));
         break;
+    case ClipType::Qml: {
+            bool ok;
+            int producerLength = 0;
+            QString pLength = Xml::getXmlProperty(m_xml, QStringLiteral("length"));
+            if (pLength.isEmpty()) {
+                producerLength = m_xml.attribute(QStringLiteral("length")).toInt();
+            } else {
+                producerLength = pLength.toInt(&ok);
+            }
+            if (producerLength <= 0) {
+                producerLength = pCore->getDurationFromString(KdenliveSettings::title_duration());
+            }
+            m_producer = loadResource(m_resource, QStringLiteral("qml:"));
+            m_producer->set("length", producerLength);
+            m_producer->set("kdenlive:duration", producerLength);
+            m_producer->set("out", producerLength - 1);
+            break;
+    }
     case ClipType::Playlist: {
         m_producer = loadPlaylist(m_resource);
         if (!m_errorMessage.isEmpty()) {
-            QMetaObject::invokeMethod(pCore.get(), "displayBinMessage", Qt::QueuedConnection, Q_ARG(const QString &, m_errorMessage),
+            QMetaObject::invokeMethod(pCore.get(), "displayBinMessage", Qt::QueuedConnection, Q_ARG(QString,m_errorMessage),
                                   Q_ARG(int, (int)KMessageWidget::Warning));
         }
-        if (m_resource.endsWith(QLatin1String(".kdenlive"))) {
+        if (m_producer && m_resource.endsWith(QLatin1String(".kdenlive"))) {
             QFile f(m_resource);
             QDomDocument doc;
             doc.setContent(&f, false);
@@ -356,9 +384,12 @@ bool LoadJob::startJob()
         }
         break;
     }
-    case ClipType::SlideShow:
-        m_producer = std::make_shared<Mlt::Producer>(pCore->getCurrentProfile()->profile(), nullptr, m_resource.toUtf8().constData());
+    case ClipType::SlideShow: {
+        QString resource = m_resource;
+        resource.prepend(QStringLiteral("qimage:"));
+        m_producer = std::make_shared<Mlt::Producer>(pCore->getCurrentProfile()->profile(), nullptr, resource.toUtf8().constData());
         break;
+    }
     default:
         if (!service.isEmpty()) {
             service.append(QChar(':'));
@@ -375,7 +406,33 @@ bool LoadJob::startJob()
         if (m_producer) {
             m_producer.reset();
         }
-        QMetaObject::invokeMethod(pCore.get(), "displayBinMessage", Qt::QueuedConnection, Q_ARG(const QString &, i18n("Cannot open file %1", m_resource)),
+        QMetaObject::invokeMethod(pCore.get(), "displayBinMessage", Qt::QueuedConnection, Q_ARG(QString, i18n("Cannot open file %1", m_resource)),
+                                  Q_ARG(int, (int)KMessageWidget::Warning));
+        m_errorMessage.append(i18n("ERROR: Could not load clip %1: producer is invalid", m_resource));
+        return false;
+    }
+    if (m_producer->get_length() == INT_MAX && m_producer->get("eof") == QLatin1String("loop")) {
+        // This is a live source or broken clip
+        m_done = true;
+        m_successful = false;
+        if (m_producer) {
+            m_producer.reset();
+        }
+        qDebug()<<"=== MAX DURATION: "<<INT_MAX<<", DURATION: "<<(INT_MAX / 25 / 60);
+        QMetaObject::invokeMethod(pCore.get(), "displayBinMessage", Qt::QueuedConnection, Q_ARG(QString, i18n("Cannot get duration for file %1", m_resource)),
+                                  Q_ARG(int, (int)KMessageWidget::Warning));
+        m_errorMessage.append(i18n("ERROR: Could not load clip %1: producer is invalid", m_resource));
+        return false;
+    }
+    if (m_producer->get_length() == INT_MAX && m_producer->get("eof") == QLatin1String("loop")) {
+        // This is a live source or broken clip
+        m_done = true;
+        m_successful = false;
+        if (m_producer) {
+            m_producer.reset();
+        }
+        qDebug()<<"=== MAX DURATION: "<<INT_MAX<<", DURATION: "<<(INT_MAX / 25 / 60);
+        QMetaObject::invokeMethod(pCore.get(), "displayBinMessage", Qt::QueuedConnection, Q_ARG(QString, i18n("Cannot get duration for file %1", m_resource)),
                                   Q_ARG(int, (int)KMessageWidget::Warning));
         m_errorMessage.append(i18n("ERROR: Could not load clip %1: producer is invalid", m_resource));
         return false;
@@ -553,7 +610,7 @@ void LoadJob::processMultiStream()
     mainLayout->addWidget(mainWidget);
     QPushButton *okButton = buttonBox->button(QDialogButtonBox::Ok);
     okButton->setDefault(true);
-    okButton->setShortcut(Qt::CTRL | Qt::Key_Return);
+    okButton->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_Return));
     dialog->connect(buttonBox, &QDialogButtonBox::accepted, dialog.data(), &QDialog::accept);
     dialog->connect(buttonBox, &QDialogButtonBox::rejected, dialog.data(), &QDialog::reject);
     okButton->setText(i18n("Import selected clips"));
@@ -620,6 +677,9 @@ bool LoadJob::commitResult(Fun &undo, Fun &redo)
     }
     m_resultConsumed = true;
     auto m_binClip = pCore->projectItemModel()->getClipByBinID(m_clipId);
+    if (!m_binClip) {
+        qDebug()<<"=============\nERROR BIN CLIP UNAVAILABLE: "<<m_clipId<<"\n==================";
+    }
     if (!m_successful) {
         // TODO: Deleting cannot happen at this stage or we endup in a mutex lock
         pCore->projectItemModel()->requestBinClipDeletion(m_binClip, undo, redo);
@@ -643,6 +703,30 @@ bool LoadJob::commitResult(Fun &undo, Fun &redo)
     };
     bool ok = operation();
     if (ok) {
+        // Currently broken because qtblend does not correctly handle scaling on source clip with size != profile. TBD in MLT
+        /*if (KdenliveSettings::disableimagescaling() && m_binClip->clipType() == ClipType::Image && !m_binClip->hasEffects()) {
+            // Add effect to have image at source size
+            QSize size = m_binClip->getFrameSize();
+            if (size.isValid() && !size.isNull() && size != pCore->getCurrentFrameSize()) {
+                // Image has a different size than project profile, create effect
+                QDomDocument doc("effects");
+                QDomElement root = doc.createElement("effects");
+                doc.appendChild(root);
+                QDomElement main = doc.createElement("effect");
+                QMap<QString, QString> properties;
+                if (EffectsRepository::get()->exists(QStringLiteral("pan_zoom"))) {
+                    main.setAttribute(QStringLiteral("id"), QStringLiteral("pan_zoom"));
+                    properties.insert(QStringLiteral("transition.geometry"), QString("0=\"0 0 %1 %2\"").arg(size.width()).arg(size.height()));
+                } else {
+                    main.setAttribute(QStringLiteral("id"), QStringLiteral("qtblend"));
+                    properties.insert(QStringLiteral("rect"), QString("0=\"0 0 %1 %2 1\"").arg(size.width()).arg(size.height()));
+                }
+                root.appendChild(main);
+                Xml::addXmlProperties(main, properties);
+                m_binClip->getEffectStack()->fromXml(doc.documentElement(), undo, redo);
+                qDebug()<<"== DOC2: "<< doc.toString();
+            }
+        }*/
         m_readyCallBack();
         if (pCore->projectItemModel()->clipsCount() == 1) {
             // Always select first added clip

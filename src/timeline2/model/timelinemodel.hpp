@@ -40,6 +40,7 @@ class CompositionModel;
 class DocUndoStack;
 class GroupsModel;
 class SnapModel;
+class SubtitleModel;
 class TimelineItemModel;
 class TrackModel;
 
@@ -52,7 +53,7 @@ class TrackModel;
 
    This is the entry point for any modifications that has to be made on an element. The dataflow beyond this entry point may vary, for example when the user
    request a clip resize, the call is deferred to the clip itself, that check if there is enough data to extend by the requested amount, compute the new in and
-   out, and then asks the track if there is enough room for extension. To avoid any confusion on which function to call first, rembember to always call the
+   out, and then asks the track if there is enough room for extension. To avoid any confusion on which function to call first, remember to always call the
    version in timeline. This is also required to generate the Undo/Redo operators
 
    The undo/redo system is designed around lambda functions. Each time a function executes an elementary change to the model, it writes the corresponding
@@ -108,19 +109,24 @@ public:
     friend class CompositionModel;
     friend class GroupsModel;
     friend class TimelineController;
+    friend class SubtitleModel;
     friend struct TimelineFunctions;
 
     /// Two level model: tracks and clips on track
     enum {
         NameRole = Qt::UserRole + 1,
         ResourceRole, /// clip only
+        IsProxyRole,  /// clip only
         ServiceRole,  /// clip only
         StartRole,    /// clip only
+        MixRole,    /// clip only, the duration of the mix
+        MixCutRole, /// The original cut position for the mix
         BinIdRole,    /// clip only
         TrackIdRole,
         FakeTrackIdRole,
         FakePositionRole,
         MarkersRole, /// clip only
+        PlaylistStateRole,  /// clip only
         StatusRole,  /// clip only
         TypeRole,    /// clip only
         KeyframesRole,
@@ -136,9 +142,13 @@ public:
         IsDisabledRole, /// track only
         IsAudioRole,
         SortRole,
+        TagRole,        /// clip only
         ShowKeyframesRole,
         AudioLevelsRole,    /// clip only
         AudioChannelsRole,  /// clip only
+        AudioStreamRole,  /// clip only
+        AudioMultiStreamRole,  /// clip only
+        AudioStreamIndexRole, /// clip only
         IsCompositeRole,    /// track only
         IsLockedRole,       /// track only
         HeightRole,         /// track only
@@ -173,6 +183,10 @@ public:
 
     /* @brief returns the number of tracks */
     int getTracksCount() const;
+    /* @brief returns the number of video and audio tracks */
+    QPair<int, int> getAVtracksCount() const;
+    /* @brief returns the ids of all audio or video tracks */
+    QList<int> getTracksIds(bool audio) const;
 
     /* @brief returns the ids of all the tracks */
     std::unordered_set<int> getAllTracksIds() const;
@@ -201,7 +215,9 @@ public:
     Q_INVOKABLE int getItemTrackId(int itemId) const;
 
     Q_INVOKABLE int getCompositionPosition(int compoId) const;
+    int getSubtitlePosition(int subId) const;
     int getCompositionPlaytime(int compoId) const;
+    std::pair<int, int> getMixInOut(int cid) const;
 
     /* Returns an item position, item can be clip or composition */
     Q_INVOKABLE int getItemPosition(int itemId) const;
@@ -225,6 +241,8 @@ public:
 
     /* @brief Helper function that returns true if the given ID corresponds to a composition */
     Q_INVOKABLE bool isComposition(int id) const;
+    
+    Q_INVOKABLE bool isSubTitle(int id) const;
 
     /* @brief Helper function that returns true if the given ID corresponds to a timeline item (composition or clip) */
     Q_INVOKABLE bool isItem(int id) const;
@@ -239,6 +257,8 @@ public:
     std::shared_ptr<AssetParameterModel> getCompositionParameterModel(int compoId) const;
     /* @brief Given a clip Id, returns its underlying effect stack model */
     std::shared_ptr<EffectStackModel> getClipEffectStackModel(int clipId) const;
+    /* @brief Given a clip Id, returns its mix transition stack model */
+    std::shared_ptr<EffectStackModel> getClipMixStackModel(int clipId) const;
 
     /* @brief Returns the position of clip (-1 if it is not inserted)
        @param clipId Id of the clip to test
@@ -346,6 +366,10 @@ public:
        @param logUndo if set to false, no undo object is stored
     */
     Q_INVOKABLE bool requestClipMove(int clipId, int trackId, int position, bool moveMirrorTracks = true, bool updateView = true, bool logUndo = true, bool invalidateTimeline = false);
+    Q_INVOKABLE bool requestSubtitleMove(int clipId, int position, bool updateView = true, bool logUndo = true, bool invalidateTimeline = false);
+    bool requestSubtitleMove(int clipId, int position, bool updateView, bool first, bool last, bool invalidateTimeline, Fun &undo, Fun &redo);
+    bool cutSubtitle(int position, Fun &undo, Fun &redo);
+    bool requestClipMix(std::pair<int, int> clipIds, int trackId, int position, bool updateView, bool invalidateTimeline, bool finalMove, Fun &undo, Fun &redo, bool groupMove);
 
     /* @brief Move a composition to a specific position This action is undoable
        Returns true on success. If it fails, nothing is modified. If the clip is
@@ -357,7 +381,7 @@ public:
 
     /* Same function, but accumulates undo and redo, and doesn't check
        for group*/
-    bool requestClipMove(int clipId, int trackId, int position, bool moveMirrorTracks, bool updateView, bool invalidateTimeline, bool finalMove, Fun &undo, Fun &redo, bool groupMove = false);
+    bool requestClipMove(int clipId, int trackId, int position, bool moveMirrorTracks, bool updateView, bool invalidateTimeline, bool finalMove, Fun &undo, Fun &redo, bool groupMove = false, QMap <int, int> moving_clips = QMap <int, int>());
     bool requestCompositionMove(int transid, int trackId, int compositionTrack, int position, bool updateView, bool finalMove, Fun &undo, Fun &redo);
 
     /* When timeline edit mode is insert or overwrite, we fake the move (as it will overlap existing clips, and only process the real move on drop */
@@ -367,7 +391,7 @@ public:
     bool requestFakeGroupMove(int clipId, int groupId, int delta_track, int delta_pos, bool updateView, bool finalMove, Fun &undo, Fun &redo,
                               bool allowViewRefresh = true);
 
-    /* @brief Given an intended move, try to suggest a more valid one
+    /** @brief Given an intended move, try to suggest a more valid one
        (accounting for snaps and missing UI calls)
        @param clipId id of the clip to
        move
@@ -376,10 +400,15 @@ public:
        @param snapDistance the maximum distance for a snap result, -1 for no snapping
         of the clip
        @param dontRefreshMasterClip when false, no view refresh is attempted
+       @returns  a list in the form {position, trackId}
         */
-    Q_INVOKABLE int suggestItemMove(int itemId, int trackId, int position, int cursorPosition, int snapDistance = -1);
-    Q_INVOKABLE int suggestClipMove(int clipId, int trackId, int position, int cursorPosition, int snapDistance = -1, bool moveMirrorTracks = true);
-    Q_INVOKABLE int suggestCompositionMove(int compoId, int trackId, int position, int cursorPosition, int snapDistance = -1);
+    Q_INVOKABLE QVariantList suggestItemMove(int itemId, int trackId, int position, int cursorPosition, int snapDistance = -1);
+    Q_INVOKABLE QVariantList suggestClipMove(int clipId, int trackId, int position, int cursorPosition, int snapDistance = -1, bool moveMirrorTracks = true);
+    Q_INVOKABLE int suggestSubtitleMove(int subId, int position, int cursorPosition, int snapDistance);
+    Q_INVOKABLE QVariantList suggestCompositionMove(int compoId, int trackId, int position, int cursorPosition, int snapDistance = -1);
+    /** @brief returns the frame pos adjusted to edit mode
+    */
+    Q_INVOKABLE int adjustFrame(int frame, int trackId);
 
     /* @brief Request clip insertion at given position. This action is undoable
        Returns true on success. If it fails, nothing is modified.
@@ -402,6 +431,11 @@ public:
      *  @param compoId the name of the new composition we want to insert
      */
     void switchComposition(int cid, const QString &compoId);
+    /**  @brief Plant a same track composition in track tid
+     */
+    void plantMix(int tid, Mlt::Transition *t);
+    bool removeMixWithUndo(int cid, Fun &undo, Fun &redo);
+    bool removeMix(int cid);
 
 protected:
     /* @brief Creates a new clip instance without inserting it.
@@ -410,7 +444,7 @@ protected:
        @param id: return parameter for the id of the newly created clip.
        @param state: The desired clip state (original, audio/video only).
      */
-    bool requestClipCreation(const QString &binClipId, int &id, PlaylistState::ClipState state, double speed, Fun &undo, Fun &redo);
+    bool requestClipCreation(const QString &binClipId, int &id, PlaylistState::ClipState state, int audioStream, double speed, bool warp_pitch, Fun &undo, Fun &redo);
 
     /* @brief Switch item selection status */
     void setSelected(int itemId, bool sel);
@@ -424,7 +458,7 @@ public:
        @param logUndo if set to false, no undo object is stored */
     Q_INVOKABLE bool requestItemDeletion(int itemId, bool logUndo = true);
     /* Same function, but accumulates undo and redo*/
-    bool requestItemDeletion(int itemId, Fun &undo, Fun &redo);
+    bool requestItemDeletion(int itemId, Fun &undo, Fun &redo, bool logUndo = false);
 
     /* @brief Move a group to a specific position
        This action is undoable
@@ -545,7 +579,7 @@ protected:
        @param snapDistance the maximum distance for a snap result, -1 for no snapping
        @returns best snap position or -1 if no snap point is near
      */
-    int getBestSnapPos(int pos, int length, const std::vector<int> &pts = std::vector<int>(), int cursorPosition = 0, int snapDistance = -1);
+    int getBestSnapPos(int referencePos, int diff, std::vector<int> pts = std::vector<int>(), int cursorPosition = 0, int snapDistance = -1);
 
     /* @brief Returns the best possible size for a clip on resize
      */
@@ -559,12 +593,12 @@ public:
     /* @brief Requests the next snapped point
        @param pos is the current position
      */
-    int getNextSnapPos(int pos);
+    int getNextSnapPos(int pos, std::vector<int> &snaps);
 
     /* @brief Requests the previous snapped point
        @param pos is the current position
      */
-    int getPreviousSnapPos(int pos);
+    int getPreviousSnapPos(int pos, std::vector<int> &snaps);
 
     /* @brief Add a new snap point
        @param pos is the current position
@@ -590,7 +624,7 @@ public:
                                      bool logUndo = true);
     /* Same function, but accumulates undo and redo*/
     bool requestCompositionInsertion(const QString &transitionId, int trackId, int compositionTrack, int position, int length,
-                                     std::unique_ptr<Mlt::Properties> transProps, int &id, Fun &undo, Fun &redo, bool finalMove = false);
+                                     std::unique_ptr<Mlt::Properties> transProps, int &id, Fun &undo, Fun &redo, bool finalMove = false, QString originalDecimalPoint = QString());
 
     /* @brief This function change the global (timeline-wise) enabled state of the effects
        It disables/enables track and clip effects (recursively)
@@ -600,10 +634,12 @@ public:
     /* @brief Get a timeline clip id by its position or -1 if not found
      */
     int getClipByPosition(int trackId, int position) const;
+    int getClipByStartPosition(int trackId, int position) const;
 
     /* @brief Get a timeline composition id by its starting position or -1 if not found
      */
     int getCompositionByPosition(int trackId, int position) const;
+    int getSubtitleByPosition(int position) const;
 
     /* @brief Returns a list of all items that are intersect with a given range.
      * @param trackId is the id of the track for concerned items. Setting trackId to -1 returns items on all tracks
@@ -612,6 +648,8 @@ public:
      * @param listCompositions if enabled, the list will also contains composition ids
      */
     std::unordered_set<int> getItemsInRange(int trackId, int start, int end = -1, bool listCompositions = true);
+    /** @brief define current project's subtitle model */
+    void setSubModel(std::shared_ptr<SubtitleModel> model);
 
     /* @brief Returns a list of all luma files used in the project
      */
@@ -620,7 +658,7 @@ public:
      */
     virtual void adjustAssetRange(int clipId, int in, int out);
 
-    void requestClipReload(int clipId);
+    void requestClipReload(int clipId, int forceDuration = -1);
     void requestClipUpdate(int clipId, const QVector<int> &roles);
     /** @brief define current edit mode (normal, insert, overwrite */
     void setEditMode(TimelineMode::EditMode mode);
@@ -637,10 +675,10 @@ public:
     This functions create an undo object and also apply the effect to the corresponding audio if there is any.
     Returns true on success, false otherwise (and nothing is modified)
     */
-    Q_INVOKABLE bool requestClipTimeWarp(int clipId, double speed, bool changeDuration);
+    Q_INVOKABLE bool requestClipTimeWarp(int clipId, double speed, bool pitchCompensate, bool changeDuration);
     /* @brief Same function as above, but doesn't check for paired audio and accumulate undo/redo
      */
-    bool requestClipTimeWarp(int clipId, double speed, bool changeDuration, Fun &undo, Fun &redo);
+    bool requestClipTimeWarp(int clipId, double speed, bool pitchCompensate, bool changeDuration, Fun &undo, Fun &redo);
 
     void replugClip(int clipId);
 
@@ -651,8 +689,18 @@ public:
         @param onDeletion is true when the selection is cleared as a result of a deletion
      */
     Q_INVOKABLE bool requestClearSelection(bool onDeletion = false);
+
+    /** @brief On groups deletion, ensure the groups were not selected, clear selection otherwise
+        @param groups The group ids
+     */
+    void clearGroupSelectionOnDelete(std::vector<int>groups);
     // same function with undo/redo accumulation
     void requestClearSelection(bool onDeletion, Fun &undo, Fun &redo);
+    
+    /** @brief Select a given mix in timeline
+        @param cid clip id
+     */
+    Q_INVOKABLE void requestMixSelection(int cid);
 
     /** @brief Add the given item to the selection
         If @param clear is true, the selection is first cleared
@@ -674,6 +722,10 @@ public:
     void prepareClose();
     /** @brief Import project's master effects */
     void importMasterEffects(std::weak_ptr<Mlt::Service> service);
+    /** @brief Create a mix selection with currently selected clip. If delta = -1, mix with previous clip, +1 with next clip and 0 will check cursor position*/
+    bool mixClip(int idToMove = -1, int delta = 0);
+    Q_INVOKABLE bool resizeStartMix(int cid, int duration, bool singleResize);
+    std::shared_ptr<SubtitleModel> getSubtitleModel();
 
 protected:
     /* @brief Register a new track. This is a call-back meant to be called from TrackModel
@@ -688,6 +740,9 @@ protected:
     /* @brief Register a new composition. This is a call-back meant to be called from CompositionModel
      */
     void registerComposition(const std::shared_ptr<CompositionModel> &composition);
+    
+    void registerSubtitle(int id, GenTime startTime, bool temporary = false);
+    void deregisterSubtitle(int id, bool temporary = false);
 
     /* @brief Register a new group. This is a call-back meant to be called from GroupsModel
      */
@@ -737,6 +792,7 @@ protected:
     /* Internal functions to delete a clip or a composition. In general, you should call requestItemDeletion */
     bool requestClipDeletion(int clipId, Fun &undo, Fun &redo);
     bool requestCompositionDeletion(int compositionId, Fun &undo, Fun &redo);
+    bool requestSubtitleDeletion(int clipId, Fun &undo, Fun &redo, bool first, bool last);
 
     /** @brief Check tracks duration and update black track accordingly */
     void updateDuration();
@@ -745,6 +801,9 @@ protected:
 
     /** @brief Attempt to make a clip move without ever updating the view */
     bool requestClipMoveAttempt(int clipId, int trackId, int position);
+    
+    int getSubtitleIndex(int subId) const;
+    std::pair<int, GenTime> getSubtitleIdFromIndex(int index) const;
 
 public:
     /* @brief Debugging function that checks consistency with Mlt objects */
@@ -770,8 +829,12 @@ signals:
 
     /* @brief Signal sent whenever the selection changes */
     void selectionChanged();
+    /* @brief Signal sent whenever the selected mix changes */
+    void selectedMixChanged(int cid, const std::shared_ptr<AssetParameterModel> &asset);
     /* @brief Signal when a track is deleted so we make sure we don't store its id */
     void checkTrackDeletion(int tid);
+    /* @brief Emitted when a clip is deleted to check if it was not used in timeline qml */
+    void checkItemDeletion(int cid);
 
 protected:
     std::unique_ptr<Mlt::Tractor> m_tractor;
@@ -786,11 +849,14 @@ protected:
 
     std::unordered_map<int, std::shared_ptr<CompositionModel>>
         m_allCompositions; // the keys are the composition id, and the values are the corresponding pointers
+        
+    std::map<int, GenTime> m_allSubtitles;
 
     static int next_id; // next valid id to assign
 
     std::unique_ptr<GroupsModel> m_groups;
     std::shared_ptr<SnapModel> m_snaps;
+    std::shared_ptr<SubtitleModel> m_subtitleModel;
 
     std::unordered_set<int> m_allGroups; // ids of all the groups
 
@@ -811,12 +877,15 @@ protected:
     // item, or, finally, the id of a group which is not of type selection. The last case happens when the selection exactly matches an existing group
     // (in that case we cannot further group it because the selection would have only one child, which is prohibited by design)
     int m_currentSelection = -1;
+    int m_selectedMix = -1;
 
     // The index of the temporary overlay track in tractor, or -1 if not connected
     int m_overlayTrackCount;
 
-    // The preferred audio target for clip insertion or -1 if not defined
-    int m_audioTarget;
+    // The preferred audio target for clip insertion in the form {timeline track id, bin clip stream index}
+    QMap <int, int> m_audioTarget;
+    /** @brief The list of audio streams available from the selected bin clip, in the form: {stream index, stream description} */
+    QMap <int, QString> m_binAudioTargets;
     // The preferred video target for clip insertion or -1 if not defined
     int m_videoTarget;
     // Timeline editing mode

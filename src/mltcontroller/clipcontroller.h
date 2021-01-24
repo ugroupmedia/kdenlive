@@ -95,6 +95,18 @@ public:
     /** @brief Returns the MLT's producer id */
     const QString binId() const;
 
+    /** @brief Returns this clip's producer. */
+    virtual std::shared_ptr<Mlt::Producer> thumbProducer() = 0;
+
+    /** @brief Rename an audio stream. */
+    virtual void renameAudioStream(int id, QString name) = 0;
+
+    /** @brief Add an audio effect on a specific audio stream for this clip. */
+    virtual void requestAddStreamEffect(int streamIndex, const QString effectName) = 0;
+    /** @brief Remove an audio effect on a specific audio stream for this clip. */
+    virtual void requestRemoveStreamEffect(int streamIndex, const QString effectName) = 0;
+    virtual QStringList getAudioStreamEffect(int streamIndex) const = 0;
+
     /** @brief Returns the clip's duration */
     GenTime getPlaytime() const;
     int getFramePlaytime() const;
@@ -165,12 +177,7 @@ public:
     void forceLimitedDuration();
     Mlt::Properties &properties();
     void mirrorOriginalProperties(Mlt::Properties &props);
-    void addEffect(QDomElement &xml);
     bool copyEffect(const std::shared_ptr<EffectStackModel> &stackModel, int rowId);
-    void removeEffect(int effectIndex, bool delayRefresh = false);
-    /** @brief Enable/disable an effect. */
-    void changeEffectState(const QList<int> &indexes, bool disable);
-    void updateEffect(const QDomElement &e, int ix);
     /** @brief Returns true if the bin clip has effects */
     bool hasEffects() const;
     /** @brief Returns true if the clip contains at least one audio stream */
@@ -190,8 +197,6 @@ public:
     void setBinEffectsEnabled(bool enabled);
     /** @brief Returns the number of Kdenlive added effects for this bin clip */
     int effectsCount();
-    /** @brief Move an effect in stack for this bin clip */
-    void moveEffect(int oldPos, int newPos);
     /** @brief Save an xml playlist of current clip with in/out points as zone.x()/y() */
     void saveZone(QPoint zone, const QDir &dir);
 
@@ -204,10 +209,16 @@ public:
     /** @brief Append an effect to this producer's effect list */
     bool addEffect(const QString &effectId);
 
-    /** @brief Returns the list of audio streams indexes for this clip */
-    QList <int> audioStreams() const;
+    /** @brief Returns the list of all audio streams indexes for this clip */
+    QMap <int, QString> audioStreams() const;
+    /** @brief Returns the number of channels per audio stream. */
+    QList <int> activeStreamChannels() const;
+    /** @brief Returns the list of active audio streams indexes for this clip */
+    QMap <int, QString> activeStreams() const;
     /** @brief Returns the count of audio streams for this clip */
     int audioStreamsCount() const;
+    /** @brief Get the path to the original clip url (in case it is proxied) */
+    const QString getOriginalUrl();
 
 protected:
     virtual void emitProducerChanged(const QString & /*unused*/, const std::shared_ptr<Mlt::Producer> & /*unused*/){};
@@ -236,8 +247,10 @@ protected:
     std::shared_ptr<MarkerListModel> m_markerModel;
     bool m_hasAudio;
     bool m_hasVideo;
+    QMap<int, QStringList> m_streamEffects;
     /** @brief Store clip url temporarily while the clip controller has not been created. */
     QString m_temporaryUrl;
+    std::shared_ptr<Mlt::Producer> m_thumbsProducer;
 
 private:
     /** @brief Mutex to protect the producer properties on read/write */

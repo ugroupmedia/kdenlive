@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 class ClipController;
 
 ProjectSubClip::ProjectSubClip(const QString &id, const std::shared_ptr<ProjectClip> &parent, const std::shared_ptr<ProjectItemModel> &model, int in, int out,
-                               const QString &timecode, const QString &name)
+                               const QString &timecode, const QMap<QString, QString> zoneProperties)
     : AbstractProjectItem(AbstractProjectItem::SubClipItem, id, model)
     , m_masterClip(parent)
 {
@@ -51,21 +51,23 @@ ProjectSubClip::ProjectSubClip(const QString &id, const std::shared_ptr<ProjectC
     QPixmap pix(64, 36);
     pix.fill(Qt::lightGray);
     m_thumbnail = QIcon(pix);
-    if (name.isEmpty()) {
+    m_name = zoneProperties.value(QLatin1String("name"));
+    if (m_name.isEmpty()) {
         m_name = i18n("Zone %1", parent->childCount() + 1);
-    } else {
-        m_name = name;
     }
-    m_clipStatus = StatusReady;
+    m_rating = zoneProperties.value(QLatin1String("rating")).toUInt();
+    m_tags = zoneProperties.value(QLatin1String("tags"));
+    qDebug()<<"=== LOADING SUBCLIP WITH RATING: "<<m_rating<<", TAGS: "<<m_tags;
+    m_clipStatus = FileStatus::StatusReady;
     // Save subclip in MLT
     connect(parent.get(), &ProjectClip::thumbReady, this, &ProjectSubClip::gotThumb);
 }
 
 std::shared_ptr<ProjectSubClip> ProjectSubClip::construct(const QString &id, const std::shared_ptr<ProjectClip> &parent,
                                                           const std::shared_ptr<ProjectItemModel> &model, int in, int out, const QString &timecode,
-                                                          const QString &name)
+                                                          const QMap<QString, QString> zoneProperties)
 {
-    std::shared_ptr<ProjectSubClip> self(new ProjectSubClip(id, parent, model, in, out, timecode, name));
+    std::shared_ptr<ProjectSubClip> self(new ProjectSubClip(id, parent, model, in, out, timecode, zoneProperties));
     baseFinishConstruct(self);
     return self;
 }
@@ -73,6 +75,11 @@ std::shared_ptr<ProjectSubClip> ProjectSubClip::construct(const QString &id, con
 ProjectSubClip::~ProjectSubClip()
 {
     // controller is deleted in bincontroller
+}
+
+const QString ProjectSubClip::cutClipId() const
+{
+    return QString("%1/%2/%3").arg(m_parentClipId).arg(m_inPoint).arg(m_outPoint);
 }
 
 void ProjectSubClip::gotThumb(int pos, const QImage &img)
@@ -138,6 +145,9 @@ std::shared_ptr<ProjectSubClip> ProjectSubClip::subClip(int in, int out)
 
 void ProjectSubClip::setThumbnail(const QImage &img)
 {
+    if (img.isNull()) {
+        return;
+    }
     QPixmap thumb = roundedPixmap(QPixmap::fromImage(img));
     int duration = m_parentDuration;
     double factor = ((double) thumb.width()) / duration;
@@ -190,17 +200,54 @@ bool ProjectSubClip::hasAudioAndVideo() const
 
 void ProjectSubClip::getThumbFromPercent(int percent)
 {
-    // extract a maximum of 50 frames for bin preview
-    percent += percent%2;
-    int framePos = (m_outPoint - m_inPoint) * percent / 100;
+    // extract a maximum of 30 frames for bin preview
+    int duration = m_outPoint - m_inPoint;
+    int steps = qCeil(qMax(pCore->getCurrentFps(), (double)duration / 30));
+    int framePos = duration * percent / 100;
+    framePos -= framePos%steps;
     if (ThumbnailCache::get()->hasThumbnail(m_parentClipId, m_inPoint + framePos)) {
         setThumbnail(ThumbnailCache::get()->getThumbnail(m_parentClipId, m_inPoint + framePos));
     } else {
         // Generate percent thumbs
         int id;
-        if (pCore->jobManager()->hasPendingJob(m_parentClipId, AbstractClipJob::CACHEJOB, &id)) {
-        } else {
-            pCore->jobManager()->startJob<CacheJob>({m_parentClipId}, -1, QString(), 150, 25, m_inPoint, m_outPoint);
+        if (!pCore->jobManager()->hasPendingJob(m_parentClipId, AbstractClipJob::CACHEJOB, &id)) {
+            emit pCore->jobManager()->startJob<CacheJob>({m_parentClipId}, -1, QString(), 30, m_inPoint, m_outPoint);
         }
     }
+}
+
+void ProjectSubClip::setProperties(const QMap<QString, QString> &properties)
+{
+    bool propertyFound = false;
+    if (properties.contains(QStringLiteral("kdenlive:tags"))) {
+        propertyFound = true;
+        m_tags = properties.value(QStringLiteral("kdenlive:tags"));
+    }
+    if (properties.contains(QStringLiteral("kdenlive:rating"))) {
+        propertyFound = true;
+        m_rating = properties.value(QStringLiteral("kdenlive:rating")).toUInt();
+    }
+    if (!propertyFound) {
+        return;
+    }
+    if (auto ptr = m_model.lock()) {
+        std::shared_ptr<AbstractProjectItem> parentItem = std::static_pointer_cast<ProjectItemModel>(ptr)->getItemByBinId(m_parentClipId);
+        if (parentItem && parentItem->itemType() == AbstractProjectItem::ClipItem) {
+            auto clipItem = std::static_pointer_cast<ProjectClip>(parentItem);
+            clipItem->updateZones();
+        }
+    }
+}
+
+void ProjectSubClip::setRating(uint rating)
+{
+    AbstractProjectItem::setRating(rating);
+    if (auto ptr = m_model.lock()) {
+        std::shared_ptr<AbstractProjectItem> parentItem = std::static_pointer_cast<ProjectItemModel>(ptr)->getItemByBinId(m_parentClipId);
+        if (parentItem && parentItem->itemType() == AbstractProjectItem::ClipItem) {
+            auto clipItem = std::static_pointer_cast<ProjectClip>(parentItem);
+            clipItem->updateZones();
+        }
+    }
+    pCore->currentDoc()->setModified(true);
 }

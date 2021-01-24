@@ -38,22 +38,31 @@ class MonitorProxy : public QObject
     Q_OBJECT
     // Q_PROPERTY(int consumerPosition READ consumerPosition NOTIFY consumerPositionChanged)
     Q_PROPERTY(int position MEMBER m_position WRITE setPosition NOTIFY positionChanged)
+    Q_PROPERTY(QPoint profile READ profile NOTIFY profileChanged)
     Q_PROPERTY(int seekFinished MEMBER m_seekFinished NOTIFY seekFinishedChanged)
     Q_PROPERTY(int zoneIn READ zoneIn WRITE setZoneIn NOTIFY zoneChanged)
     Q_PROPERTY(int zoneOut READ zoneOut WRITE setZoneOut NOTIFY zoneChanged)
-    Q_PROPERTY(int rulerHeight READ rulerHeight NOTIFY rulerHeightChanged)
+    Q_PROPERTY(int rulerHeight READ rulerHeight WRITE setRulerHeight NOTIFY rulerHeightChanged)
     Q_PROPERTY(QString markerComment READ markerComment NOTIFY markerCommentChanged)
-    Q_PROPERTY(QUrl audioThumb MEMBER m_audioThumb NOTIFY audioThumbChanged)
+    Q_PROPERTY(QList <int> audioStreams MEMBER m_audioStreams NOTIFY audioThumbChanged)
+    Q_PROPERTY(QList <int> audioChannels MEMBER m_audioChannels NOTIFY audioThumbChanged)
     Q_PROPERTY(int overlayType READ overlayType WRITE setOverlayType NOTIFY overlayTypeChanged)
+    Q_PROPERTY(QColor thumbColor1 READ thumbColor1 NOTIFY colorsChanged)
+    Q_PROPERTY(QColor thumbColor2 READ thumbColor2 NOTIFY colorsChanged)
+    Q_PROPERTY(bool autoKeyframe READ autoKeyframe NOTIFY autoKeyframeChanged)
+    Q_PROPERTY(bool audioThumbFormat READ audioThumbFormat NOTIFY audioThumbFormatChanged)
+    Q_PROPERTY(bool audioThumbNormalize READ audioThumbNormalize NOTIFY audioThumbNormalizeChanged)
     /** @brief: Returns true if current clip in monitor has Audio and Video
      * */
     Q_PROPERTY(bool clipHasAV MEMBER m_hasAV NOTIFY clipHasAVChanged)
     /** @brief: Contains the name of clip currently displayed in monitor
      * */
     Q_PROPERTY(QString clipName MEMBER m_clipName NOTIFY clipNameChanged)
+    Q_PROPERTY(QString clipStream MEMBER m_clipStream NOTIFY clipStreamChanged)
     /** @brief: Contains the name of clip currently displayed in monitor
      * */
     Q_PROPERTY(int clipType MEMBER m_clipType NOTIFY clipTypeChanged)
+    Q_PROPERTY(int clipId MEMBER m_clipId NOTIFY clipIdChanged)
 
 public:
     MonitorProxy(GLWidget *parent);
@@ -68,6 +77,11 @@ public:
      * */
     int getPosition() const;
     Q_INVOKABLE bool setPosition(int pos);
+    Q_INVOKABLE void seek(int delta, uint modifiers);
+    Q_INVOKABLE QColor thumbColor1() const;
+    Q_INVOKABLE QColor thumbColor2() const;
+    bool audioThumbFormat() const;
+    bool audioThumbNormalize() const;
     void positionFromConsumer(int pos, bool playing);
     void setMarkerComment(const QString &comment);
     int zoneIn() const;
@@ -83,16 +97,24 @@ public:
     QPoint zone() const;
     QImage extractFrame(int frame_position, const QString &path = QString(), int width = -1, int height = -1, bool useSourceProfile = false);
     Q_INVOKABLE QString toTimecode(int frames) const;
+    Q_INVOKABLE void startZoneMove();
+    Q_INVOKABLE void endZoneMove();
     Q_INVOKABLE double fps() const;
-    void setClipProperties(ClipType::ProducerType type, bool hasAV, const QString clipName);
-    void setAudioThumb(const QUrl thumbPath = QUrl());
+    Q_INVOKABLE void switchAutoKeyframe();
+    Q_INVOKABLE bool autoKeyframe() const;
+    QPoint profile();
+    void setClipProperties(int clipId, ClipType::ProducerType type, bool hasAV, const QString clipName);
+    void setAudioThumb(const QList <int> streamIndexes = QList <int>(), QList <int> channels = QList <int>());
+    void setAudioStream(const QString &name);
+    void setRulerHeight(int height);
 
 signals:
     void positionChanged(int);
     void seekFinishedChanged();
     void requestSeek(int pos);
     void zoneChanged();
-    void saveZone();
+    void saveZone(const QPoint zone);
+    void saveZoneWithUndo(const QPoint, const QPoint&);
     void markerCommentChanged();
     void rulerHeightChanged();
     void addSnap(int);
@@ -105,8 +127,15 @@ signals:
     void seekToKeyframe();
     void clipHasAVChanged();
     void clipNameChanged();
+    void clipStreamChanged();
     void clipTypeChanged();
+    void clipIdChanged();
     void audioThumbChanged();
+    void colorsChanged();
+    void audioThumbFormatChanged();
+    void audioThumbNormalizeChanged();
+    void profileChanged();
+    void autoKeyframeChanged();
 
 private:
     GLWidget *q;
@@ -114,11 +143,15 @@ private:
     int m_zoneIn;
     int m_zoneOut;
     bool m_hasAV;
-    QUrl m_audioThumb;
+    QList <int> m_audioStreams;
+    QList <int> m_audioChannels;
     QString m_markerComment;
     QString m_clipName;
+    QString m_clipStream;
     int m_clipType;
+    int m_clipId;
     bool m_seekFinished;
+    QPoint m_undoZone;
 };
 
 #endif

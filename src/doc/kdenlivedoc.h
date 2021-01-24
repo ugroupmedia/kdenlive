@@ -20,7 +20,7 @@
 /*! \class KdenliveDoc
     \brief Represents a kdenlive project file
 
-   Instances of KdeliveDoc classes are created by void MainWindow::newFile(bool showProjectSettings, bool force)
+   Instances of KdenliveDoc classes are created by void MainWindow::newFile(bool showProjectSettings, bool force)
 */
 #ifndef KDENLIVEDOC_H
 #define KDENLIVEDOC_H
@@ -33,6 +33,7 @@
 #include <qdom.h>
 
 #include <kautosavefile.h>
+#include "../bin/model/subtitlemodel.hpp"
 
 #include "definitions.h"
 #include "gentime.h"
@@ -44,6 +45,7 @@ class ProjectClip;
 class MarkerListModel;
 class Render;
 class ProfileParam;
+class SubtitleModel;
 
 class QUndoGroup;
 class QUndoCommand;
@@ -58,11 +60,11 @@ class KdenliveDoc : public QObject
     Q_OBJECT
 public:
     KdenliveDoc(const QUrl &url, QString projectFolder, QUndoGroup *undoGroup, const QString &profileName, const QMap<QString, QString> &properties,
-                const QMap<QString, QString> &metadata, const QPoint &tracks, bool *openBackup, MainWindow *parent = nullptr);
+                const QMap<QString, QString> &metadata, const QPair<int, int> &tracks, int audioChannels, bool *openBackup, MainWindow *parent = nullptr);
     ~KdenliveDoc() override;
     friend class LoadJob;
     /** @brief Get current document's producer. */
-    const QByteArray getProjectXml();
+    const QByteArray getAndClearProjectXml();
     double fps() const;
     int width() const;
     int height() const;
@@ -77,6 +79,8 @@ public:
 
     const QString description() const;
     void setUrl(const QUrl &url);
+    /** @brief Update path of subtitle url. */
+    void updateSubtitle(QString newUrl = QString());
 
     /** @brief Defines whether the document needs to be saved. */
     bool isModified() const;
@@ -100,6 +104,8 @@ public:
     QPoint zone() const;
     /** @brief Returns target tracks (video, audio). */
     QPair<int, int> targetTracks() const;
+    /** @brief Load document guides from properties. */
+    void loadDocumentGuides();
     void setDocumentProperty(const QString &name, const QString &value);
     virtual const QString getDocumentProperty(const QString &name, const QString &defaultValue = QString()) const;
 
@@ -121,7 +127,7 @@ public:
     bool autoGenerateImageProxy(int width) const;
     /** @brief Saves effects embedded in project file. */
     void saveCustomEffects(const QDomNodeList &customeffects);
-    void resetProfile();
+    void resetProfile(bool reloadThumbs);
     /** @brief Returns true if the profile file has changed. */
     bool profileChanged(const QString &profile) const;
     /** @brief Get an action from main actioncollection. */
@@ -163,6 +169,21 @@ public:
     void addProducerTwigCode(QString id, QString code);
     QString getProducerTwigCode(QString id);
     void relativeToAbsolutePath(QDomDocument doc);
+    /** @brief Returns a list of project tags (color / description) */
+    QMap <QString, QString> getProjectTags();
+    /** @brief Returns the number of audio channels for this project */
+    int audioChannels() const;
+
+
+    /**
+     * If the document used a decimal point different than “.”, it is stored in this property.
+     * @return Original decimal point, or an empty string if it was “.” already
+     */
+    QString &modifiedDecimalPoint();
+    /** @brief Initialize subtitle model */
+    void initializeSubtitles(const std::shared_ptr<SubtitleModel> m_subtitle);
+    /** @brief Returns a path for current document's subtitle file. If final is true, this will be the project filename with ".srt" appended. Otherwise a file in /tmp */
+    const QString subTitlePath(bool final);
 
 private:
     QUrl m_url;
@@ -196,12 +217,15 @@ private:
     std::shared_ptr<MarkerListModel> m_guideModel;
     QVector<QPair<QDomNode, QString>> m_propertyTwigCode;
     QMap<QString, QString> m_producerTwigCode;
+    std::weak_ptr<SubtitleModel> m_subtitleModel;
+
+    QString m_modifiedDecimalPoint;
 
     QString searchFileRecursively(const QDir &dir, const QString &matchSize, const QString &matchHash) const;
 
     /** @brief Creates a new project. */
     QDomDocument createEmptyDocument(int videotracks, int audiotracks);
-    QDomDocument createEmptyDocument(const QList<TrackInfo> &tracks, int audiotracks);
+    QDomDocument createEmptyDocument(const QList<TrackInfo> &tracks);
 
     /** @brief Updates the project folder location entry in the kdenlive file dialogs to point to the current project folder. */
     void updateProjectFolderPlacesEntry();
@@ -210,7 +234,7 @@ private:
     /** @brief Load document properties from the xml file */
     void loadDocumentProperties();
     /** @brief update document properties to reflect a change in the current profile */
-    void updateProjectProfile(bool reloadProducers = false);
+    void updateProjectProfile(bool reloadProducers = false, bool reloadThumbs = false);
     /** @brief initialize proxy settings based on hw status */
     void initProxySettings();
 
@@ -233,9 +257,9 @@ public slots:
 private slots:
     void slotModified();
     void switchProfile(std::unique_ptr<ProfileParam> &profile, const QString &id, const QDomElement &xml);
-    void slotSwitchProfile(const QString &profile_path);
+    void slotSwitchProfile(const QString &profile_path, bool reloadThumbs);
     /** @brief Check if we did a new action invalidating more recent undo items. */
-    void checkPreviewStack();
+    void checkPreviewStack(int ix);
     /** @brief Guides were changed, save to MLT. */
     void guidesChanged();
 

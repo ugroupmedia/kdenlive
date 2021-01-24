@@ -38,7 +38,7 @@
 #include "ui_logindialog_ui.h"
 
 #include "kdenlive_debug.h"
-#include <QWebView>
+#include <QWebEngineView>
 
 LoginDialog::LoginDialog(QWidget *parent)
     : QDialog(parent)
@@ -47,19 +47,28 @@ LoginDialog::LoginDialog(QWidget *parent)
     m_ui->setupUi(this);
     setAttribute(Qt::WA_DeleteOnClose);
     setWindowTitle(i18n("Freesound Login"));
-
     connect(m_ui->CancelButton, &QPushButton::clicked, this, &LoginDialog::slotRejected);
     connect(m_ui->GetHQpreview, &QPushButton::clicked, this, &LoginDialog::slotGetHQPreview);
     m_ui->FreeSoundLoginLabel->setText(
         i18n("Enter your freesound account details to download the highest quality version of this file. Or use the High Quality "
              "preview file instead (no freesound account required)."));
     // m_ui->textBrowser
-    connect(m_ui->webView, &QWebView::urlChanged, this, &LoginDialog::urlChanged);
+    connect(m_ui->webView, &QWebEngineView::urlChanged, this, &LoginDialog::urlChanged);
+    connect(m_ui->webView, &QWebEngineView::loadFinished, this, [&](){
+        qDebug() << "LoginDialog: loadFinished";
+        this->setEnabled(true);
+    });
 }
 
 LoginDialog::~LoginDialog()
 {
     delete m_ui;
+}
+
+void LoginDialog::open()
+{
+    QDialog::open();
+    setEnabled(false);
 }
 
 void LoginDialog::slotGetHQPreview()
@@ -83,15 +92,15 @@ void LoginDialog::slotRejected()
 void LoginDialog::urlChanged(const QUrl &url)
 {
     // qCDebug(KDENLIVE_LOG) << "URL =" << url;
-    const QString str = url.toString();
-    const int posCode = str.indexOf(QLatin1String("&code="));
-    const int posErr = str.indexOf(QLatin1String("&error="));
+    const QString str = url.query(QUrl::FullyDecoded);
+    const int posCode = str.indexOf(QLatin1String("code="));
+    const int posErr = str.indexOf(QLatin1String("error="));
     if (posCode != -1) {
-        m_strAuthCode = str.mid(posCode + 6);
+        m_strAuthCode = str.mid(posCode + 5);
         emit authCodeObtained();
         QDialog::accept();
     } else if (posErr != -1) {
-        QString sError = str.mid(posErr + 7);
+        QString sError = str.mid(posErr + 6);
         if (sError == QLatin1String("access_denied")) {
             emit accessDenied();
         }

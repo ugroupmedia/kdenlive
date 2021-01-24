@@ -33,10 +33,7 @@
  * Note that this class is a Singleton
  */
 
-enum class EffectType { Preferred, Video, Audio, Custom, CustomAudio, Favorites, Hidden = -1 };
-Q_DECLARE_METATYPE(EffectType)
-
-class EffectsRepository : public AbstractAssetsRepository<EffectType>
+class EffectsRepository : public AbstractAssetsRepository<AssetListType::AssetType>
 {
 
 public:
@@ -48,6 +45,7 @@ public:
     /* @brief returns true if an effect exists in MLT (bypasses the blacklist/metadata parsing) */
     bool hasInternalEffect(const QString &effectId) const;
     QPair<QString, QString> reloadCustom(const QString &path);
+    QString getCustomPath(const QString &id);
 
     /* @brief Returns whether this belongs to main effects */
     bool isPreferred(const QString &effectId) const;
@@ -55,6 +53,10 @@ public:
     /* @brief Check custom effects (older custom effects need an update to default and current values
     *  returns a list of effects that were incorrectly converted */
     QPair<QStringList, QStringList> fixDeprecatedEffects();
+    /** @brief Returns true if this is an effect group */
+    bool isGroup(const QString &assetId) const;
+    void deleteEffect(const QString &id);
+    bool isAudioEffect(const QString &assetId) const;
 
 protected:
     // Constructor is protected because class is a Singleton
@@ -80,7 +82,7 @@ protected:
 
     /* @brief Returns the metadata associated with the given asset*/
     Mlt::Properties *getMetadata(const QString &assetId) const override;
-    
+
     QPair <QString, QString> fixCustomAssetFile(const QString &path);
 
     static std::unique_ptr<EffectsRepository> instance;

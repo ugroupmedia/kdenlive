@@ -76,6 +76,7 @@ public:
     QModelIndex makeClipIndexFromID(int clipId) const override;
     /* @brief Creates an index based on the ID of the compoition*/
     QModelIndex makeCompositionIndexFromID(int compoId) const override;
+    void subtitleChanged(int subId, const QVector<int> roles);
     /* @brief Creates an index based on the ID of the track*/
     QModelIndex makeTrackIndexFromID(int trackId) const override;
     QModelIndex parent(const QModelIndex &index) const override;
@@ -83,6 +84,12 @@ public:
     /* @brief Enabled/disabled a track's effect stack */
     Q_INVOKABLE void setTrackStackEnabled(int tid, bool enable);
     Q_INVOKABLE QVariant getTrackProperty(int tid, const QString &name) const;
+    /* @brief Sets a track name
+       @param trackId is of the track to alter
+       @param text is the new track name.
+    */
+    Q_INVOKABLE void setTrackName(int trackId, const QString &text);
+    Q_INVOKABLE void hideTrack(int trackId, const QString state);
     /** @brief returns the lower video track index in timeline.
      **/
     int getFirstVideoTrackIndex() const;
@@ -97,7 +104,7 @@ public:
 
     const QString groupsData();
     bool loadGroups(const QString &groupsData);
-    
+
     /** @brief Rebuild track compositing */
     void buildTrackCompositing(bool rebuild = false) override;
     void _beginRemoveRows(const QModelIndex & /*unused*/, int /*unused*/, int /*unused*/) override;
@@ -109,5 +116,10 @@ public:
 protected:
     // This is an helper function that finishes a construction of a freshly created TimelineItemModel
     static void finishConstruct(const std::shared_ptr<TimelineItemModel> &ptr, const std::shared_ptr<MarkerListModel> &guideModel);
+
+signals:
+    /** @brief Triggered when a video track visibility changed */
+    void trackVisibilityChanged();
+    void showTrackEffectStack(int tid);
 };
 #endif

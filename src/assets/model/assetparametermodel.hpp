@@ -42,12 +42,12 @@ class KeyframeModelList;
 
 enum class ParamType {
     Double,
-    List,
+    List, // Value can be chosen from a list of pre-defined ones
     Bool,
     Switch,
     RestrictedAnim, // animated 1 dimensional param with linear support only
     Animated,
-    AnimatedRect,
+    AnimatedRect, // Animated rects have X, Y, width, height, and opacity (in [0,1])
     Geometry,
     Addedgeometry,
     KeyframeParam,
@@ -71,7 +71,18 @@ class AssetParameterModel : public QAbstractListModel, public enable_shared_from
     Q_OBJECT
 
 public:
+    /**
+     *
+     * @param asset
+     * @param assetXml XML to parse, from project file
+     * @param assetId
+     * @param ownerId
+     * @param originalDecimalPoint If a decimal point other than “.” was used, try to replace all occurrences by a “.”
+     * so numbers are parsed correctly.
+     * @param parent
+     */
     explicit AssetParameterModel(std::unique_ptr<Mlt::Properties> asset, const QDomElement &assetXml, const QString &assetId, ObjectId ownerId,
+                                 const QString& originalDecimalPoint = QString(),
                                  QObject *parent = nullptr);
     ~AssetParameterModel() override;
     enum DataRoles {
@@ -80,6 +91,8 @@ public:
         CommentRole,
         AlternateNameRole,
         MinRole,
+        VisualMinRole,
+        VisualMaxRole,
         MaxRole,
         DefaultRole,
         SuffixRole,
@@ -93,6 +106,7 @@ public:
         FilterRole,
         FilterJobParamsRole,
         FilterParamsRole,
+        FilterConsumerParamsRole,
         ScaleRole,
         OpacityRole,
         RelativePosRole,
@@ -126,6 +140,9 @@ public:
 
     /* @brief Returns the id of the asset represented by this object */
     QString getAssetId() const;
+    const QString getAssetMltId();
+    void setActive(bool active);
+    bool isActive() const;
 
     /* @brief Set the parameter with given name to the given value
      */
@@ -144,7 +161,7 @@ public:
     /* @brief Sets the value of a list of parameters
        @param params contains the pairs (parameter name, parameter value)
      */
-    void setParameters(const QVector<QPair<QString, QVariant>> &params);
+    void setParameters(const QVector<QPair<QString, QVariant>> &params, bool update = true);
 
     /* Which monitor is attached to this asset (clip/project)
      */
@@ -170,6 +187,12 @@ public:
     void passProperties(Mlt::Properties &target);
     /* @brief Returns a list of the parameter names that are keyframable */
     QStringList getKeyframableParameters() const;
+
+    /** @brief Returns the current value of an effect parameter */
+    const QString getParam(const QString &paramName);
+    
+    /** @brief Returns the current asset */
+    Mlt::Properties *getAsset();
 
 protected:
     /* @brief Helper function to retrieve the type of a parameter given the string corresponding to it*/
@@ -200,6 +223,7 @@ protected:
 
     QString m_assetId;
     ObjectId m_ownerId;
+    bool m_active;
     std::vector<QString> m_paramOrder;                   // Keep track of parameter order, important for sox
     std::unordered_map<QString, ParamRow> m_params;      // Store all parameters by name
     std::unordered_map<QString, QVariant> m_fixedParams; // We store values of fixed parameters aside

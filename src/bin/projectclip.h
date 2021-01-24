@@ -81,7 +81,7 @@ protected:
 public:
     ~ProjectClip() override;
 
-    void reloadProducer(bool refreshOnly = false, bool audioStreamChanged = false, bool reloadAudio = true);
+    void reloadProducer(bool refreshOnly = false, bool isProxy = false, bool forceAudioReload = false);
 
     /** @brief Returns a unique hash identifier used to store clip thumbnails. */
     // virtual void hash() = 0;
@@ -98,6 +98,9 @@ public:
 
     /** @brief Returns the clip type as defined in definitions.h */
     ClipType::ProducerType clipType() const override;
+
+    /** @brief Set rating on item */
+    void setRating(uint rating) override;
 
     bool selfSoftDelete(Fun &undo, Fun &redo) override;
 
@@ -143,11 +146,8 @@ public:
      * . */
     bool setProducer(std::shared_ptr<Mlt::Producer> producer, bool replaceProducer);
 
-    /** @brief Returns true if this clip already has a producer. */
-    bool isReady() const;
-
     /** @brief Returns this clip's producer. */
-    std::shared_ptr<Mlt::Producer> thumbProducer();
+    std::shared_ptr<Mlt::Producer> thumbProducer() override;
 
     /** @brief Recursively disable/enable bin effects. */
     void setBinEffectsEnabled(bool enabled) override;
@@ -162,13 +162,14 @@ public:
 
     /** @brief The clip hash created from the clip's resource. */
     const QString hash();
+    /** @brief Callculate a file hash from a path. */
+    static const QPair<QByteArray, qint64> calculateHash(const QString path);
 
     /** @brief Returns true if we are using a proxy for this clip. */
     bool hasProxy() const;
 
     /** Cache for every audio Frame with 10 Bytes */
     /** format is frame -> channel ->bytes */
-    QVector<double> audioFrameCache;
     bool audioThumbCreated() const;
 
     void setWaitingStatus(const QString &id);
@@ -177,7 +178,7 @@ public:
 
     /** @brief Returns the number of audio channels. */
     int audioChannels() const;
-    /** @brief get data analysis value. */
+     /** @brief get data analysis value. */
     QStringList updatedAnalysisData(const QString &name, const QString &data, int offset);
     QMap<QString, QString> analysisData(bool withPrefix = false);
     /** @brief Returns the list of this clip's subclip's ids. */
@@ -185,7 +186,7 @@ public:
     /** @brief Delete cached audio thumb - needs to be recreated */
     void discardAudioThumb();
     /** @brief Get path for this clip's audio thumbnail */
-    const QString getAudioThumbPath(bool miniThumb = false);
+    const QString getAudioThumbPath(int stream);
     /** @brief Returns true if this producer has audio and can be splitted on timeline*/
     bool isSplittable() const;
 
@@ -198,20 +199,22 @@ public:
     /** @brief This function returns a cut to the master producer associated to the timeline clip with given ID.
         Each clip must have a different master producer (see comment of the class)
     */
-    std::shared_ptr<Mlt::Producer> getTimelineProducer(int trackId, int clipId, PlaylistState::ClipState st, double speed = 1.0);
+    std::shared_ptr<Mlt::Producer> getTimelineProducer(int trackId, int clipId, PlaylistState::ClipState st, int audioStream = -1, double speed = 1.0, bool secondPlaylist = false);
 
     /* @brief This function should only be used at loading. It takes a producer that was read from mlt, and checks whether the master producer is already in
        use. If yes, then we must create a new one, because of the mixing bug. In any case, we return a cut of the master that can be used in the timeline The
        bool returned has the following sementic:
            - if true, then the returned cut still possibly has effect on it. You need to rebuild the effectStack based on this
-           - if false, the the returned cut don't have effects anymore (it's a fresh one), so you need to reload effects from the old producer
+           - if false, then the returned cut don't have effects anymore (it's a fresh one), so you need to reload effects from the old producer
     */
-    std::pair<std::shared_ptr<Mlt::Producer>, bool> giveMasterAndGetTimelineProducer(int clipId, std::shared_ptr<Mlt::Producer> master,
-                                                                                     PlaylistState::ClipState state);
+    std::pair<std::shared_ptr<Mlt::Producer>, bool> giveMasterAndGetTimelineProducer(int clipId, std::shared_ptr<Mlt::Producer> master, PlaylistState::ClipState state, int tid, bool secondPlaylist = false);
 
     std::shared_ptr<Mlt::Producer> cloneProducer(bool removeEffects = false);
     static std::shared_ptr<Mlt::Producer> cloneProducer(const std::shared_ptr<Mlt::Producer> &producer);
     std::shared_ptr<Mlt::Producer> softClone(const char *list);
+    /** @brief Returns a clone of the producer, useful for movit clip jobs
+     */
+    std::unique_ptr<Mlt::Producer> getClone();
     void updateTimelineClips(const QVector<int> &roles);
     /** @brief Saves the subclips data as json
      */
@@ -219,6 +222,31 @@ public:
     /** @brief Display Bin thumbnail given a percent
      */
     void getThumbFromPercent(int percent);
+    /** @brief Return audio cache for a stream
+     */
+    const QVector <uint8_t> audioFrameCache(int stream = -1);
+    /** @brief Return FFmpeg's audio stream index for an MLT audio stream index
+     */
+    int getAudioStreamFfmpegIndex(int mltStream);
+    void setClipStatus(FileStatus::ClipStatus status) override;
+    /** @brief Rename an audio stream for this clip
+     */
+    void renameAudioStream(int id, QString name) override;
+
+    /** @brief Add an audio effect on a specific audio stream with undo/redo. */
+    void requestAddStreamEffect(int streamIndex, const QString effectName) override;
+    /** @brief Add an audio effect on a specific audio stream for this clip. */
+    void addAudioStreamEffect(int streamIndex, const QString effectName);
+    /** @brief Remove an audio effect on a specific audio stream with undo/redo. */
+    void requestRemoveStreamEffect(int streamIndex, const QString effectName) override;
+    /** @brief Remove an audio effect on a specific audio stream for this clip. */
+    void removeAudioStreamEffect(int streamIndex, QString effectName);
+    /** @brief Get the list of audio stream effects for a defined stream. */
+    QStringList getAudioStreamEffect(int streamIndex) const override;
+    /** @brief Calculate the folder's hash (based on the files it contains). */
+    static const QByteArray getFolderHash(QDir dir, QString fileName);
+    /** @brief Check if the clip is included in timeline and reset its occurrences on producer reload. */
+    void updateTimelineOnReload();
 
 protected:
     friend class ClipModel;
@@ -244,22 +272,28 @@ protected:
 public slots:
     /* @brief Store the audio thumbnails once computed. Note that the parameter is a value and not a reference, fill free to use it as a sink (use std::move to
      * avoid copy). */
-    void updateAudioThumbnail(const QVector<double> audioLevels);
+    void updateAudioThumbnail();
     /** @brief Delete the proxy file */
     void deleteProxy();
 
-    /** @brief imports effect from a given producer */
-    void importEffects(const std::shared_ptr<Mlt::Producer> &producer);
+    /**
+     * Imports effect from a given producer
+     * @param producer Producer containing the effects
+     * @param originalDecimalPoint Decimal point to convert to “.”; See AssetParameterModel
+     */
+    void importEffects(const std::shared_ptr<Mlt::Producer> &producer, QString originalDecimalPoint = QString());
 
 private:
     /** @brief Generate and store file hash if not available. */
     const QString getFileHash();
-    std::shared_ptr<Mlt::Producer> m_thumbsProducer;
     QMutex m_producerMutex;
     QMutex m_thumbMutex;
     QFuture<void> m_thumbThread;
     QList<int> m_requestedThumbs;
     const QString geometryWithOffset(const QString &data, int offset);
+    QMap <QString, QByteArray> m_audioLevels;
+    /** @brief If true, all timeline occurrences of this clip will be replaced from a fresh producer on reload. */
+    bool m_resetTimelineOccurences;
 
     // This is a helper function that creates the disabled producer. This is a clone of the original one, with audio and video disabled
     void createDisabledMasterProducer();
@@ -282,6 +316,7 @@ signals:
     /** @brief Clip is ready, load properties. */
     void loadPropertiesPanel();
     void audioThumbReady();
+    void updateStreamInfo(int ix);
 };
 
 #endif

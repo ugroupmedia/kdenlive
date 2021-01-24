@@ -8,10 +8,12 @@ set(kdenlive_SRCS
   bin/filewatcher.cpp
   bin/generators/generators.cpp
   bin/model/markerlistmodel.cpp
+  bin/model/subtitlemodel.cpp
   bin/projectclip.cpp
   bin/projectfolder.cpp
   bin/projectitemmodel.cpp
   bin/projectsortproxymodel.cpp
   bin/projectsubclip.cpp
+  bin/tagwidget.cpp
   PARENT_SCOPE
 )

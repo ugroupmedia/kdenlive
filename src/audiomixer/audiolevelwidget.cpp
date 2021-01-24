@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 AudioLevelWidget::AudioLevelWidget(int width, QWidget *parent)
     : QWidget(parent)
-    , audioChannels(2)
+    , audioChannels(pCore->audioChannels())
     , m_width(width)
     , m_channelWidth(width / 2)
     , m_channelDistance(2)
@@ -80,7 +80,7 @@ void AudioLevelWidget::drawBackground(int channels)
         return;
     }
     m_offset = fontMetrics().boundingRect(QStringLiteral("-45")).width() + 5;
-    newSize.setWidth(newSize.width() - m_offset);
+    newSize.setWidth(newSize.width() - m_offset - 1);
     QLinearGradient gradient(0, newSize.height(), 0, 0);
     gradient.setColorAt(0.0, Qt::darkGreen);
     gradient.setColorAt(0.379, Qt::darkGreen);
@@ -104,7 +104,7 @@ void AudioLevelWidget::drawBackground(int channels)
     }
     QRect rect(m_offset, 0, newSize.width(), newSize.height());
     QPainter p(&m_pixmap);
-    p.setOpacity(isEnabled() ? 0.4 : 0.2);
+    p.setOpacity(isEnabled() ? 0.8 : 0.4);
     p.setFont(font());
     p.fillRect(rect, QBrush(gradient));
 
@@ -116,7 +116,7 @@ void AudioLevelWidget::drawBackground(int channels)
     int labelHeight = fontMetrics().ascent();
     for (int i = 0; i < dbLabelCount; i++) {
         int value = dbscale.at(i);
-        QString label = QString().sprintf("%d", value);
+        QString label = QString::number(value);
         //int labelWidth = fontMetrics().width(label);
         double xf = m_pixmap.height() - pow(10.0, (double)dbscale.at(i) / 50.0) * m_pixmap.height() * 40.0 / 42;
         /*if (xf + labelWidth / 2 > m_pixmap.height()) {
@@ -130,7 +130,7 @@ void AudioLevelWidget::drawBackground(int channels)
     }
     p.setOpacity(isEnabled() ? 1 : 0.5);
     p.setPen(palette().dark().color());
-    // Clear space between the 2 channels
+    // Clear space between the channels
     p.setCompositionMode(QPainter::CompositionMode_Source);
     if (m_channelWidth < 4) {
         // too many audio channels, simple line between channels

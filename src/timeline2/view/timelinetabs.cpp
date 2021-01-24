@@ -53,8 +53,15 @@ TimelineTabs::TimelineTabs(QWidget *parent)
         tabBar()->tabButton(0, QTabBar::RightSide)->resize(0, 0);
     }
     connect(pCore->monitorManager()->projectMonitor(), &Monitor::zoneUpdated, m_mainTimeline, &TimelineWidget::zoneUpdated);
+    connect(pCore->monitorManager()->projectMonitor(), &Monitor::zoneUpdatedWithUndo, m_mainTimeline, &TimelineWidget::zoneUpdatedWithUndo);
     connect(m_mainTimeline, &TimelineWidget::zoneMoved, pCore->monitorManager()->projectMonitor(), &Monitor::slotLoadClipZone);
     connect(pCore->monitorManager()->projectMonitor(), &Monitor::addEffect, m_mainTimeline->controller(), &TimelineController::addEffectToCurrentClip);
+}
+
+TimelineTabs::~TimelineTabs()
+{
+    // clear source
+    m_mainTimeline->setSource(QUrl());
 }
 
 TimelineWidget *TimelineTabs::getMainTimeline() const
@@ -76,8 +83,11 @@ void TimelineTabs::connectTimeline(TimelineWidget *timeline)
     connect(this, &TimelineTabs::changeZoom, timeline, &TimelineWidget::slotChangeZoom);
     connect(this, &TimelineTabs::fitZoom, timeline, &TimelineWidget::slotFitZoom);
     connect(timeline->controller(), &TimelineController::showTransitionModel, this, &TimelineTabs::showTransitionModel);
-    connect(timeline->controller(), &TimelineController::updateZoom, [&](double value) { emit updateZoom(getCurrentTimeline()->zoomForScale(value)); });
+    connect(timeline->controller(), &TimelineController::showMixModel, this, &TimelineTabs::showMixModel);
+    connect(timeline->controller(), &TimelineController::updateZoom, this, [&](double value) { emit updateZoom(getCurrentTimeline()->zoomForScale(value)); });
     connect(timeline->controller(), &TimelineController::showItemEffectStack, this, &TimelineTabs::showItemEffectStack);
+    connect(timeline->controller(), &TimelineController::showSubtitle, this, &TimelineTabs::showSubtitle);
+    connect(timeline->controller(), &TimelineController::centerView, timeline, &TimelineWidget::slotCenterView);
 }
 
 void TimelineTabs::disconnectTimeline(TimelineWidget *timeline)
@@ -89,6 +99,8 @@ void TimelineTabs::disconnectTimeline(TimelineWidget *timeline)
     disconnect(this, &TimelineTabs::showAudioThumbnailsChanged, timeline->controller(), &TimelineController::showAudioThumbnailsChanged);
     disconnect(this, &TimelineTabs::changeZoom, timeline, &TimelineWidget::slotChangeZoom);
     disconnect(timeline->controller(), &TimelineController::showTransitionModel, this, &TimelineTabs::showTransitionModel);
+    disconnect(timeline->controller(), &TimelineController::showMixModel, this, &TimelineTabs::showMixModel);
     disconnect(timeline->controller(), &TimelineController::showItemEffectStack, this, &TimelineTabs::showItemEffectStack);
+    disconnect(timeline->controller(), &TimelineController::showSubtitle, this, &TimelineTabs::showSubtitle);
     delete timeline;
 }

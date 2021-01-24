@@ -24,10 +24,12 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QMouseEvent>
-#include <QScreen>
 #include <QTimer>
 #include <QToolButton>
+#include <QStylePainter>
+#include <QStyleOptionFocusRect>
 #include <klocalizedstring.h>
+
 
 #ifdef Q_WS_X11
 #include <X11/Xutil.h>
@@ -53,6 +55,7 @@ void MyFrame::hideEvent(QHideEvent *event)
 
 ColorPickerWidget::ColorPickerWidget(QWidget *parent)
     : QWidget(parent)
+    , m_mouseColor(Qt::transparent)
 
 {
 #ifdef Q_WS_X11
@@ -73,6 +76,7 @@ ColorPickerWidget::ColorPickerWidget(QWidget *parent)
 
     layout->addWidget(button);
     setFocusPolicy(Qt::StrongFocus);
+    setMouseTracking(true);
 
     m_grabRectFrame = new MyFrame();
     m_grabRectFrame->hide();
@@ -84,6 +88,22 @@ ColorPickerWidget::~ColorPickerWidget()
     if (m_filterActive) {
         removeEventFilter(this);
     }
+}
+
+void ColorPickerWidget::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event);
+    QStylePainter painter(this);
+    
+    QStyleOptionComplex option;
+    option.initFrom(this);
+    if (m_filterActive) {
+        QRect r = option.rect;
+        int margin = r.height() / 8;
+        r.adjust(margin, 4 * margin, -margin, -margin);
+        painter.fillRect(r, m_mouseColor);
+    }
+    painter.drawComplexControl(QStyle::CC_ToolButton, option);
 }
 
 void ColorPickerWidget::slotGetAverageColor()
@@ -170,6 +190,9 @@ void ColorPickerWidget::mouseReleaseEvent(QMouseEvent *event)
 
 void ColorPickerWidget::mouseMoveEvent(QMouseEvent *event)
 {
+    // Draw live rectangle of current color under mouse
+    m_mouseColor = grabColor(QCursor::pos(), true);
+    update();
     if (m_filterActive) {
         m_grabRect.setWidth(event->globalX() - m_grabRect.x());
         m_grabRect.setHeight(event->globalY() - m_grabRect.y());
@@ -183,7 +206,7 @@ void ColorPickerWidget::slotSetupEventFilter()
     m_filterActive = true;
     setFocus();
     installEventFilter(this);
-    grabMouse(QCursor(QIcon::fromTheme(QStringLiteral("color-picker")).pixmap(32, 32), 16, 2));
+    grabMouse(QCursor(QIcon::fromTheme(QStringLiteral("color-picker")).pixmap(32, 32), 4, 28));
     grabKeyboard();
 }
 

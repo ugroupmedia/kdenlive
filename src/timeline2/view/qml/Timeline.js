@@ -19,12 +19,12 @@
 function scrollIfNeeded() {
     if (!scrollView) return;
     var x = root.consumerPosition * timeline.scaleFactor;
-    if (x > scrollView.flickableItem.contentX + scrollView.width - 50)
-        scrollView.flickableItem.contentX = x - scrollView.width + 50;
+    if (x > scrollView.contentX + scrollView.width - 50)
+        scrollView.contentX = x - scrollView.width + 50;
     else if (x < 50)
-        scrollView.flickableItem.contentX = 0;
-    else if (x < scrollView.flickableItem.contentX + 50)
-        scrollView.flickableItem.contentX = x - 50;
+        scrollView.contentX = 0;
+    else if (x < scrollView.contentX + 50)
+        scrollView.contentX = x - 50;
 }
 
 function getTrackIndexFromPos(pos) {
@@ -49,7 +49,7 @@ function getTrackIdFromPos(pos) {
 }
 
 function getTrackYFromId(id) {
-    var result = - scrollView.flickableItem.contentY
+    var result = - scrollView.contentY
     for (var i = 0; i < trackHeaderRepeater.count; i++) {
         if (trackHeaderRepeater.itemAt(i).trackId == id) {
             break;
@@ -79,11 +79,18 @@ function getTrackById(id) {
     return 0
 }
 
+function getTrackHeightByPos(pos) {
+    if (pos >= 0 && pos < tracksRepeater.count) {
+        return tracksRepeater.itemAt(pos).height
+    }
+    return 0
+}
+
 function getTrackYFromMltIndex(id) {
     if (id <= 0) {
         return 0
     }
-    var result = - scrollView.flickableItem.contentY
+    var result = - scrollView.contentY
     for (var i = 0; i < trackHeaderRepeater.count - id; i++) {
         result += trackHeaderRepeater.itemAt(i).height
     }
@@ -107,7 +114,7 @@ function getTracksList() {
 }
 
 function acceptDrop(xml) {
-    var position = Math.round((dropTarget.x + scrollView.flickableItem.contentX - headerWidth) / timeline.scaleFactor)
+    var position = Math.round((dropTarget.x + scrollView.contentX - headerWidth) / timeline.scaleFactor)
     timeline.insertClip(currentTrack, position, xml)
     /*if (timeline.ripple)
         timeline.insert(currentTrack, position, xml)

@@ -20,6 +20,7 @@
  ***************************************************************************/
 
 #include "qmlmanager.h"
+#include "kdenlivesettings.h"
 
 #include <QFontDatabase>
 #include <QQmlContext>
@@ -49,13 +50,14 @@ void QmlManager::setScene(Kdenlive::MonitorId id, MonitorSceneType type, QSize p
         // Scene type already active
         return;
     }
-    if (id == Kdenlive::DvdMonitor) {
+    /*if (id == Kdenlive::DvdMonitor) {
         return;
-    }
+    }*/
     m_sceneType = type;
     QQuickItem *root = nullptr;
-    const QFont ft = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    m_view->rootContext()->setContextProperty("fixedFont", ft);
+    m_view->rootContext()->setContextProperty("fixedFont", QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    double scalex = (double)displayRect.width() / profile.width() * zoom;
+    double scaley = (double)displayRect.height() / profile.height() * zoom;
     switch (type) {
     case MonitorSceneGeometry:
         m_view->setSource(QUrl(QStringLiteral("qrc:/qml/kdenlivemonitoreffectscene.qml")));
@@ -64,19 +66,18 @@ void QmlManager::setScene(Kdenlive::MonitorId id, MonitorSceneType type, QSize p
         QObject::connect(root, SIGNAL(centersChanged()), this, SLOT(effectPolygonChanged()), Qt::UniqueConnection);
         root->setProperty("profile", QPoint(profile.width(), profile.height()));
         root->setProperty("framesize", QRect(0, 0, profile.width(), profile.height()));
-        root->setProperty("scalex", (double)displayRect.width() / profile.width() * zoom);
-        root->setProperty("scaley", (double)displayRect.width() / profileStretch / profile.width() * zoom);
+        root->setProperty("scalex", scalex);
+        root->setProperty("scaley", scaley);
         root->setProperty("center", displayRect.center());
         break;
     case MonitorSceneCorners:
-        qDebug() << "/// LOADING CORNERS SCENE\n\n+++++++++++++++++++++++++\n------------------\n+++++++++++++++++";
         m_view->setSource(QUrl(QStringLiteral("qrc:/qml/kdenlivemonitorcornerscene.qml")));
         root = m_view->rootObject();
         QObject::connect(root, SIGNAL(effectPolygonChanged()), this, SLOT(effectPolygonChanged()), Qt::UniqueConnection);
         root->setProperty("profile", QPoint(profile.width(), profile.height()));
         root->setProperty("framesize", QRect(0, 0, profile.width(), profile.height()));
-        root->setProperty("scalex", (double)displayRect.width() / profile.width() * zoom);
-        root->setProperty("scaley", (double)displayRect.width() / profileStretch / profile.width() * zoom);
+        root->setProperty("scalex", scalex);
+        root->setProperty("scaley", scaley);
         root->setProperty("stretch", profileStretch);
         root->setProperty("center", displayRect.center());
         break;
@@ -86,26 +87,44 @@ void QmlManager::setScene(Kdenlive::MonitorId id, MonitorSceneType type, QSize p
         QObject::connect(root, SIGNAL(effectPolygonChanged()), this, SLOT(effectRotoChanged()), Qt::UniqueConnection);
         root->setProperty("profile", QPoint(profile.width(), profile.height()));
         root->setProperty("framesize", QRect(0, 0, profile.width(), profile.height()));
-        root->setProperty("scalex", (double)displayRect.width() / profile.width() * zoom);
-        root->setProperty("scaley", (double)displayRect.width() / profileStretch / profile.width() * zoom);
+        root->setProperty("scalex", scalex);
+        root->setProperty("scaley", scaley);
+        root->setProperty("stretch", profileStretch);
+        root->setProperty("center", displayRect.center());
+        break;
+    case MonitorSplitTrack:
+        m_view->setSource(QUrl(QStringLiteral("qrc:/qml/kdenlivemonitorsplittracks.qml")));
+        root = m_view->rootObject();
+        QObject::connect(root, SIGNAL(activateTrack(int)), this, SIGNAL(activateTrack(int)), Qt::UniqueConnection);
+        root->setProperty("profile", QPoint(profile.width(), profile.height()));
+        root->setProperty("framesize", QRect(0, 0, profile.width(), profile.height()));
+        root->setProperty("scalex", scalex);
+        root->setProperty("scaley", scaley);
         root->setProperty("stretch", profileStretch);
         root->setProperty("center", displayRect.center());
         break;
     case MonitorSceneSplit:
         m_view->setSource(QUrl(QStringLiteral("qrc:/qml/kdenlivemonitorsplit.qml")));
         root = m_view->rootObject();
+        root->setProperty("profile", QPoint(profile.width(), profile.height()));
+        root->setProperty("scalex", scalex);
+        root->setProperty("scaley", scaley);
         break;
     case MonitorSceneRipple:
         m_view->setSource(QUrl(QStringLiteral("qrc:/qml/kdenlivemonitorripple.qml")));
         root = m_view->rootObject();
         break;
-    default:
+    default:         
         m_view->setSource(
-            QUrl(id == Kdenlive::ClipMonitor ? QStringLiteral("qrc:/qml/kdenliveclipmonitor.qml") : QStringLiteral("qrc:/qml/kdenlivemonitor.qml")));
+            QUrl(id == Kdenlive::ClipMonitor || id == Kdenlive::DvdMonitor ? QStringLiteral("qrc:/qml/kdenliveclipmonitor.qml") : QStringLiteral("qrc:/qml/kdenlivemonitor.qml")));
         root = m_view->rootObject();
         root->setProperty("profile", QPoint(profile.width(), profile.height()));
-        root->setProperty("scalex", (double)displayRect.width() / profile.width() * zoom);
-        root->setProperty("scaley", (double)displayRect.width() / profileStretch / profile.width() * zoom);
+        root->setProperty("scalex", scalex);
+        root->setProperty("scaley", scaley);
+        if (id == Kdenlive::ClipMonitor) {
+            // Apply the always show audio setting
+            root->setProperty("permanentAudiothumb", KdenliveSettings::alwaysShowMonitorAudio());
+        }
         break;
     }
     if (root && duration > 0) {
@@ -128,7 +147,6 @@ void QmlManager::effectPolygonChanged()
         return;
     }
     QVariantList points = m_view->rootObject()->property("centerPoints").toList();
-    qDebug() << "// GOT NEW POLYGON FROM QML: " << points;
     emit effectPointsChanged(points);
 }
 

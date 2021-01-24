@@ -24,6 +24,7 @@
 #include "abstractclipjob.h"
 
 #include <QImage>
+#include <QMutex>
 #include <memory>
 
 /* @brief This class represents the job that corresponds to computing the thumb of a clip
@@ -43,7 +44,7 @@ public:
        @param frameNumber is the frame to extract. Leave to -1 for default
        @param persistent: if true, we will use the persistent cache (for query and saving)
     */
-    ThumbJob(const QString &binId, int imageHeight, int frameNumber = -1, bool persistent = false, bool reloadAllThumbs = false);
+    ThumbJob(const QString &binId, int frameNumber = -1, bool persistent = false, bool reloadAllThumbs = false);
 
     const QString getDescription() const override;
 
@@ -55,13 +56,15 @@ public:
 
 private:
     int m_frameNumber;
-    int m_fullWidth;
     int m_imageHeight;
+    int m_imageWidth;
+    int m_fullWidth;
 
     std::shared_ptr<ProjectClip> m_binClip;
     std::shared_ptr<Mlt::Producer> m_prod;
 
     QImage m_result;
+    QMutex m_mutex;
     bool m_done{false};
     bool m_persistent;
     bool m_reloadAll;

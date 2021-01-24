@@ -95,6 +95,32 @@ bool MarkerListModel::addMarker(GenTime pos, const QString &comment, int type, F
     return false;
 }
 
+bool MarkerListModel::addMarkers(QMap <GenTime, QString> markers, int type)
+{
+    QWriteLocker locker(&m_lock);
+    Fun undo = []() { return true; };
+    Fun redo = []() { return true; };
+
+    QMapIterator<GenTime, QString> i(markers);
+    bool rename = false;
+    bool res = true;
+    while (i.hasNext() && res) {
+        i.next();
+        if (m_markerList.count(i.key()) > 0) {
+            rename = true;
+        }
+        res = addMarker(i.key(), i.value(), type, undo, redo);
+    }
+    if (res) {
+        if (rename) {
+            PUSH_UNDO(undo, redo, m_guide ? i18n("Rename guide") : i18n("Rename marker"));
+        } else {
+            PUSH_UNDO(undo, redo, m_guide ? i18n("Add guide") : i18n("Add marker"));
+        }
+    }
+    return res;
+}
+
 bool MarkerListModel::addMarker(GenTime pos, const QString &comment, int type)
 {
     QWriteLocker locker(&m_lock);
@@ -331,12 +357,12 @@ QList<CommentedTime> MarkerListModel::getAllMarkers() const
     return markers;
 }
 
-std::vector<size_t> MarkerListModel::getSnapPoints() const
+std::vector<int> MarkerListModel::getSnapPoints() const
 {
     READ_LOCK();
-    std::vector<size_t> markers;
+    std::vector<int> markers;
     for (const auto &marker : m_markerList) {
-        markers.push_back((size_t)marker.first.frames(pCore->getCurrentFps()));
+        markers.push_back(marker.first.frames(pCore->getCurrentFps()));
     }
     return markers;
 }
@@ -357,7 +383,7 @@ void MarkerListModel::registerSnapModel(const std::weak_ptr<SnapInterface> &snap
 
         // we now add the already existing markers to the snap
         for (const auto &marker : m_markerList) {
-            qDebug() << " *- *-* REGISTEING MARKER: " << marker.first.frames(pCore->getCurrentFps());
+            qDebug() << " *- *-* REGISTERING MARKER: " << marker.first.frames(pCore->getCurrentFps());
             ptr->addPoint(marker.first.frames(pCore->getCurrentFps()));
         }
     } else {
@@ -386,7 +412,7 @@ bool MarkerListModel::importFromJson(const QString &data, bool ignoreConflicts, 
         return false;
     }
     auto list = json.array();
-    for (const auto &entry : list) {
+    for (const auto &entry : qAsConst(list)) {
         if (!entry.isObject()) {
             qDebug() << "Warning : Skipping invalid marker data";
             continue;
@@ -459,11 +485,13 @@ bool MarkerListModel::removeAllMarkers()
     return true;
 }
 
-bool MarkerListModel::editMarkerGui(const GenTime &pos, QWidget *parent, bool createIfNotFound, ClipController *clip)
+bool MarkerListModel::editMarkerGui(const GenTime &pos, QWidget *parent, bool createIfNotFound, ClipController *clip, bool createOnly)
 {
     bool exists;
     auto marker = getMarker(pos, &exists);
-    Q_ASSERT(exists || createIfNotFound);
+    if(!exists && !createIfNotFound) {
+        pCore->displayMessage(i18n("No guide found at current position"), InformationMessage);
+    }
 
     if (!exists && createIfNotFound) {
         marker = CommentedTime(pos, QString());
@@ -474,7 +502,7 @@ bool MarkerListModel::editMarkerGui(const GenTime &pos, QWidget *parent, bool cr
 
     if (dialog->exec() == QDialog::Accepted) {
         marker = dialog->newMarker();
-        if (exists) {
+        if (exists && !createOnly) {
             return editMarker(pos, marker.time(), marker.comment(), marker.markerType());
         }
         return addMarker(marker.time(), marker.comment(), marker.markerType());

@@ -31,6 +31,8 @@
 #include "kdenlive_debug.h"
 #include <QObject>
 
+const double MonitorManager::speedArray[5] = {1.5, 2., 3., 5.5, 10.};
+
 MonitorManager::MonitorManager(QObject *parent)
     : QObject(parent)
 
@@ -39,11 +41,6 @@ MonitorManager::MonitorManager(QObject *parent)
     refreshTimer.setSingleShot(true);
     refreshTimer.setInterval(200);
     connect(&refreshTimer, &QTimer::timeout, this, &MonitorManager::forceProjectMonitorRefresh);
-}
-
-Timecode MonitorManager::timecode() const
-{
-    return m_timecode;
 }
 
 QAction *MonitorManager::getAction(const QString &name)
@@ -107,9 +104,9 @@ void MonitorManager::focusProjectMonitor()
     activateMonitor(Kdenlive::ProjectMonitor);
 }
 
-void MonitorManager::refreshProjectRange(QSize range)
+void MonitorManager::refreshProjectRange(QPair<int, int> range)
 {
-    if (m_projectMonitor->position() >= range.width() && m_projectMonitor->position() <= range.height()) {
+    if (m_projectMonitor->position() >= range.first && m_projectMonitor->position() <= range.second) {
         m_projectMonitor->refreshMonitorIfActive();
     }
 }
@@ -131,13 +128,13 @@ void MonitorManager::forceProjectMonitorRefresh()
 
 bool MonitorManager::projectMonitorVisible() const
 {
-    return (m_projectMonitor->isVisible() && !m_projectMonitor->visibleRegion().isEmpty());
+    return (m_projectMonitor->monitorIsFullScreen() || (m_projectMonitor->isVisible() && !m_projectMonitor->visibleRegion().isEmpty()));
 }
 
 bool MonitorManager::activateMonitor(Kdenlive::MonitorId name)
 {
     if ((m_activeMonitor != nullptr) && m_activeMonitor->id() == name) {
-        return false;
+        return true;
     }
     if (m_clipMonitor == nullptr || m_projectMonitor == nullptr) {
         return false;
@@ -152,12 +149,27 @@ bool MonitorManager::activateMonitor(Kdenlive::MonitorId name)
         }
     }
     if (m_activeMonitor) {
-        m_activeMonitor->parentWidget()->raise();
         if (name == Kdenlive::ClipMonitor) {
+            if (!m_clipMonitor->monitorIsFullScreen()) {
+                m_clipMonitor->parentWidget()->raise();
+            }
+            if (!m_clipMonitor->isVisible()) {
+                pCore->displayMessage(i18n("Do you want to <a href=\"#clipmonitor\">show the clip monitor</a> to view timeline?"), MessageType::InformationMessage);
+                m_activeMonitor = m_projectMonitor;
+                return false;
+            }
             emit updateOverlayInfos(name, KdenliveSettings::displayClipMonitorInfo());
             m_projectMonitor->displayAudioMonitor(false);
             m_clipMonitor->displayAudioMonitor(true);
         } else if (name == Kdenlive::ProjectMonitor) {
+            if (!m_projectMonitor->monitorIsFullScreen()) {
+                m_projectMonitor->parentWidget()->raise();
+            }
+            if (!m_projectMonitor->isVisible()) {
+                pCore->displayMessage(i18n("Do you want to <a href=\"#projectmonitor\">show the project monitor</a> to view timeline?"), MessageType::InformationMessage);
+                m_activeMonitor = m_clipMonitor;
+                return false;
+            }
             emit updateOverlayInfos(name, KdenliveSettings::displayProjectMonitorInfo());
             m_clipMonitor->displayAudioMonitor(false);
             m_projectMonitor->displayAudioMonitor(true);
@@ -235,19 +247,15 @@ void MonitorManager::slotLoopZone()
 
 void MonitorManager::slotRewind(double speed)
 {
-    if (m_activeMonitor == m_clipMonitor) {
-        m_clipMonitor->slotRewind(speed);
-    } else if (m_activeMonitor == m_projectMonitor) {
-        m_projectMonitor->slotRewind(speed);
+    if (m_activeMonitor) {
+        m_activeMonitor->slotRewind(speed);
     }
 }
 
 void MonitorManager::slotForward(double speed)
 {
-    if (m_activeMonitor == m_clipMonitor) {
-        m_clipMonitor->slotForward(speed);
-    } else if (m_activeMonitor == m_projectMonitor) {
-        m_projectMonitor->slotForward(speed);
+    if (m_activeMonitor) {
+        m_activeMonitor->slotForward(speed, true);
     }
 }
 
@@ -272,18 +280,18 @@ void MonitorManager::slotForwardOneFrame()
 void MonitorManager::slotRewindOneSecond()
 {
     if (m_activeMonitor == m_clipMonitor) {
-        m_clipMonitor->slotRewindOneFrame(m_timecode.fps());
+        m_clipMonitor->slotRewindOneFrame(qRound(pCore->getCurrentFps()));
     } else if (m_activeMonitor == m_projectMonitor) {
-        m_projectMonitor->slotRewindOneFrame(m_timecode.fps());
+        m_projectMonitor->slotRewindOneFrame(qRound(pCore->getCurrentFps()));
     }
 }
 
 void MonitorManager::slotForwardOneSecond()
 {
     if (m_activeMonitor == m_clipMonitor) {
-        m_clipMonitor->slotForwardOneFrame(m_timecode.fps());
+        m_clipMonitor->slotForwardOneFrame(qRound(pCore->getCurrentFps()));
     } else if (m_activeMonitor == m_projectMonitor) {
-        m_projectMonitor->slotForwardOneFrame(m_timecode.fps());
+        m_projectMonitor->slotForwardOneFrame(qRound(pCore->getCurrentFps()));
     }
 }
 
@@ -305,9 +313,8 @@ void MonitorManager::slotEnd()
     }
 }
 
-void MonitorManager::resetProfiles(const Timecode &tc)
+void MonitorManager::resetProfiles()
 {
-    m_timecode = tc;
     m_clipMonitor->resetProfile();
     m_projectMonitor->resetProfile();
 }
@@ -387,7 +394,7 @@ void MonitorManager::setupActions()
     pCore->window()->addAction(QStringLiteral("monitor_zoomout"), monitorZoomOut);
 
     QAction *monitorSeekBackward = new QAction(QIcon::fromTheme(QStringLiteral("media-seek-backward")), i18n("Rewind"), this);
-    connect(monitorSeekBackward, SIGNAL(triggered(bool)), SLOT(slotRewind()));
+    connect(monitorSeekBackward, &QAction::triggered, this, &MonitorManager::slotRewind);
     pCore->window()->addAction(QStringLiteral("monitor_seek_backward"), monitorSeekBackward, Qt::Key_J);
 
     QAction *monitorSeekBackwardOneFrame = new QAction(QIcon::fromTheme(QStringLiteral("media-skip-backward")), i18n("Rewind 1 Frame"), this);
@@ -399,7 +406,7 @@ void MonitorManager::setupActions()
     pCore->window()->addAction(QStringLiteral("monitor_seek_backward-one-second"), monitorSeekBackwardOneSecond, Qt::SHIFT + Qt::Key_Left);
 
     QAction *monitorSeekForward = new QAction(QIcon::fromTheme(QStringLiteral("media-seek-forward")), i18n("Forward"), this);
-    connect(monitorSeekForward, SIGNAL(triggered(bool)), SLOT(slotForward()));
+    connect(monitorSeekForward,  &QAction::triggered, this, &MonitorManager::slotForward);
     pCore->window()->addAction(QStringLiteral("monitor_seek_forward"), monitorSeekForward, Qt::Key_L);
 
     QAction *projectStart = new QAction(QIcon::fromTheme(QStringLiteral("go-first")), i18n("Go to Project Start"), this);
@@ -408,9 +415,9 @@ void MonitorManager::setupActions()
 
     m_multiTrack = new QAction(QIcon::fromTheme(QStringLiteral("view-split-left-right")), i18n("Multitrack view"), this);
     m_multiTrack->setCheckable(true);
-    connect(m_multiTrack, &QAction::triggered, [&](bool checked) {
+    connect(m_multiTrack, &QAction::triggered, this, [&](bool checked) {
         if (m_projectMonitor) {
-            m_projectMonitor->multitrackView(checked, true);
+            emit m_projectMonitor->multitrackView(checked, true);
         }
     });
     pCore->window()->addAction(QStringLiteral("monitor_multitrack"), m_multiTrack);
@@ -577,7 +584,13 @@ void MonitorManager::slotSetInPoint()
     if (m_activeMonitor == m_clipMonitor) {
         m_clipMonitor->slotSetZoneStart();
     } else if (m_activeMonitor == m_projectMonitor) {
-        m_projectMonitor->slotSetZoneStart();
+        QPoint sourceZone = m_projectMonitor->getZoneInfo();
+        QPoint destZone = sourceZone;
+        destZone.setX(m_projectMonitor->position());
+        if (destZone.x() > destZone.y()) {
+            destZone.setY(qMin(pCore->projectDuration(), destZone.x() + (sourceZone.y() - sourceZone.x())));
+        }
+        emit m_projectMonitor->zoneUpdatedWithUndo(sourceZone, destZone);
     }
 }
 
@@ -586,10 +599,13 @@ void MonitorManager::slotSetOutPoint()
     if (m_activeMonitor == m_clipMonitor) {
         m_clipMonitor->slotSetZoneEnd();
     } else if (m_activeMonitor == m_projectMonitor) {
-        // NOT anymore: Zone end behaves slightly differently in clip monitor and timeline monitor.
-        // in timeline, set zone end selects the frame before current cursor, but in clip monitor
-        // it selects frame at current cursor position.
-        m_projectMonitor->slotSetZoneEnd();
+        QPoint sourceZone = m_projectMonitor->getZoneInfo();
+        QPoint destZone = sourceZone;
+        destZone.setY(m_projectMonitor->position() + 1);
+        if (destZone.y() < destZone.x()) {
+            destZone.setX(qMax(0, destZone.y() - (sourceZone.y() - sourceZone.x())));
+        }
+        emit m_projectMonitor->zoneUpdatedWithUndo(sourceZone, destZone);
     }
 }
 
@@ -633,8 +649,10 @@ void MonitorManager::updateBgColor()
 {
     if (m_projectMonitor) {
         m_projectMonitor->updateBgColor();
+        m_projectMonitor->forceMonitorRefresh();
     }
     if (m_clipMonitor) {
         m_clipMonitor->updateBgColor();
+        m_clipMonitor->forceMonitorRefresh();
     }
 }

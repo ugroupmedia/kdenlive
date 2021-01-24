@@ -28,7 +28,9 @@
 #include "kdenlivesettings.h"
 #include "model/assetparametermodel.hpp"
 #include "transitions/transitionsrepository.hpp"
+#include "effects/effectsrepository.hpp"
 #include "transitions/view/transitionstackview.hpp"
+#include "transitions/view/mixstackview.hpp"
 
 #include "view/assetparameterview.hpp"
 
@@ -36,6 +38,7 @@
 #include <KColorUtils>
 #include <KDualAction>
 #include <KSqueezedTextLabel>
+#include <KMessageWidget>
 #include <QApplication>
 #include <QToolBar>
 #include <QToolButton>
@@ -52,6 +55,7 @@ AssetPanel::AssetPanel(QWidget *parent)
     , m_assetTitle(new KSqueezedTextLabel(this))
     , m_container(new QWidget(this))
     , m_transitionWidget(new TransitionStackView(this))
+    , m_mixWidget(new MixStackView(this))
     , m_effectStackWidget(new EffectStackView(this))
 {
     auto *buttonToolbar = new QToolBar(this);
@@ -63,12 +67,14 @@ AssetPanel::AssetPanel(QWidget *parent)
     m_switchCompoButton = new QComboBox(this);
     m_switchCompoButton->setFrame(false);
     auto allTransitions = TransitionsRepository::get()->getNames();
-    for (const auto &transition : allTransitions) {
+    for (const auto &transition : qAsConst(allTransitions)) {
         m_switchCompoButton->addItem(transition.second, transition.first);
     }
-    connect(m_switchCompoButton, static_cast<void (QComboBox::*)(int)>(&QComboBox::activated), [&]() {
+    connect(m_switchCompoButton, static_cast<void (QComboBox::*)(int)>(&QComboBox::activated), this, [&]() {
         if (m_transitionWidget->stackOwner().first == ObjectType::TimelineComposition) {
             emit switchCurrentComposition(m_transitionWidget->stackOwner().second, m_switchCompoButton->currentData().toString());
+        } else if (m_mixWidget->isVisible()) {
+            emit switchCurrentComposition(m_mixWidget->stackOwner().second, m_switchCompoButton->currentData().toString());
         }
     });
     m_switchCompoButton->setToolTip(i18n("Change composition type"));
@@ -118,6 +124,7 @@ AssetPanel::AssetPanel(QWidget *parent)
     auto *lay = new QVBoxLayout(m_container);
     lay->setContentsMargins(0, 0, 0, 0);
     lay->addWidget(m_transitionWidget);
+    lay->addWidget(m_mixWidget);
     lay->addWidget(m_effectStackWidget);
     m_sc = new QScrollArea;
     m_sc->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -128,15 +135,21 @@ AssetPanel::AssetPanel(QWidget *parent)
     m_sc->setWidgetResizable(true);
 
     m_lay->addWidget(m_sc);
+    m_infoMessage = new KMessageWidget(this);
+    m_lay->addWidget(m_infoMessage);
+    m_infoMessage->hide();
     m_sc->setWidget(m_container);
     m_transitionWidget->setVisible(false);
+    m_mixWidget->setVisible(false);
     m_effectStackWidget->setVisible(false);
     updatePalette();
     connect(m_effectStackWidget, &EffectStackView::checkScrollBar, this, &AssetPanel::slotCheckWheelEventFilter);
+    connect(m_effectStackWidget, &EffectStackView::scrollView, this, &AssetPanel::scrollTo);
     connect(m_effectStackWidget, &EffectStackView::seekToPos, this, &AssetPanel::seekToPos);
     connect(m_effectStackWidget, &EffectStackView::reloadEffect, this, &AssetPanel::reloadEffect);
     connect(m_transitionWidget, &TransitionStackView::seekToTransPos, this, &AssetPanel::seekToPos);
-    connect(m_effectStackWidget, &EffectStackView::updateEnabledState, [this]() { m_enableStackButton->setActive(m_effectStackWidget->isStackEnabled()); });
+    connect(m_mixWidget, &MixStackView::seekToTransPos, this, &AssetPanel::seekToPos);
+    connect(m_effectStackWidget, &EffectStackView::updateEnabledState, this, [this]() { m_enableStackButton->setActive(m_effectStackWidget->isStackEnabled()); });
 }
 
 void AssetPanel::showTransition(int tid, const std::shared_ptr<AssetParameterModel> &transitionModel)
@@ -148,8 +161,7 @@ void AssetPanel::showTransition(int tid, const std::shared_ptr<AssetParameterMod
         return;
     }
     clear();
-    QString transitionId = transitionModel->getAssetId();
-    m_switchCompoButton->setCurrentIndex(m_switchCompoButton->findData(transitionId));
+    m_switchCompoButton->setCurrentIndex(m_switchCompoButton->findData(transitionModel->getAssetId()));
     m_switchAction->setVisible(true);
     m_titleAction->setVisible(false);
     m_assetTitle->clear();
@@ -158,6 +170,29 @@ void AssetPanel::showTransition(int tid, const std::shared_ptr<AssetParameterMod
     m_enableStackButton->setVisible(false);
     m_transitionWidget->setModel(transitionModel, QSize(), true);
 }
+
+void AssetPanel::showMix(int cid, const std::shared_ptr<AssetParameterModel> &transitionModel)
+{
+    if (cid == -1) {
+        clear();
+        return;
+    }
+    ObjectId id = {ObjectType::TimelineMix, cid};
+    if (m_mixWidget->stackOwner() == id) {
+        // already on this effect stack, do nothing
+        return;
+    }
+    clear();
+    m_switchAction->setVisible(true);
+    m_titleAction->setVisible(false);
+    m_assetTitle->clear();
+    m_mixWidget->setVisible(true);
+    m_timelineButton->setVisible(false);
+    m_enableStackButton->setVisible(false);
+    m_switchCompoButton->setCurrentIndex(m_switchCompoButton->findData(transitionModel->getAssetId()));
+    m_mixWidget->setModel(transitionModel, QSize(), true);
+}
+
 
 void AssetPanel::showEffectStack(const QString &itemName, const std::shared_ptr<EffectStackModel> &effectsModel, QSize frameSize, bool showKeyframes)
 {
@@ -212,7 +247,7 @@ void AssetPanel::showEffectStack(const QString &itemName, const std::shared_ptr<
     m_enableStackButton->setActive(effectsModel->isStackEnabled());
     if (showSplit) {
         m_splitButton->setEnabled(effectsModel->rowCount() > 0);
-        QObject::connect(effectsModel.get(), &EffectStackModel::dataChanged, [&]() {
+        QObject::connect(effectsModel.get(), &EffectStackModel::dataChanged, this, [&]() {
             if (m_effectStackWidget->isEmpty()) {
                 m_splitButton->setActive(false);
             }
@@ -237,11 +272,16 @@ void AssetPanel::clearAssetPanel(int itemId)
     ObjectId id = m_effectStackWidget->stackOwner();
     if (id.first == ObjectType::TimelineClip && id.second == itemId) {
         clear();
-    } else {
-        id = m_transitionWidget->stackOwner();
-        if (id.first == ObjectType::TimelineComposition && id.second == itemId) {
-            clear();
-        }
+        return;
+    }
+    id = m_transitionWidget->stackOwner();
+    if (id.first == ObjectType::TimelineComposition && id.second == itemId) {
+        clear();
+        return;
+    }
+    id = m_mixWidget->stackOwner();
+    if (id.first == ObjectType::TimelineMix && id.second == itemId) {
+        clear();
     }
 }
 
@@ -254,11 +294,14 @@ void AssetPanel::clear()
     m_switchAction->setVisible(false);
     m_transitionWidget->setVisible(false);
     m_transitionWidget->unsetModel();
+    m_mixWidget->setVisible(false);
+    m_mixWidget->unsetModel();
     m_effectStackWidget->setVisible(false);
     m_splitButton->setVisible(false);
     m_timelineButton->setVisible(false);
     m_switchBuiltStack->setVisible(false);
     m_effectStackWidget->unsetModel();
+    
     m_assetTitle->setText(QString());
 }
 
@@ -268,6 +311,7 @@ void AssetPanel::updatePalette()
     setStyleSheet(styleSheet);
     m_transitionWidget->setStyleSheet(styleSheet);
     m_effectStackWidget->setStyleSheet(styleSheet);
+    m_mixWidget->setStyleSheet(styleSheet);
 }
 
 // static
@@ -352,22 +396,25 @@ void AssetPanel::processSplitEffect(bool enable)
 
 void AssetPanel::showKeyframes(bool enable)
 {
-    if (m_transitionWidget->isVisible()) {
-        pCore->showClipKeyframes(m_transitionWidget->stackOwner(), enable);
-    } else {
+    if (m_effectStackWidget->isVisible()) {
         pCore->showClipKeyframes(m_effectStackWidget->stackOwner(), enable);
+    } else if (m_transitionWidget->isVisible()) {
+        pCore->showClipKeyframes(m_transitionWidget->stackOwner(), enable);
     }
 }
 
 ObjectId AssetPanel::effectStackOwner()
 {
+    if (m_effectStackWidget->isVisible()) {
+        return m_effectStackWidget->stackOwner();
+    }
     if (m_transitionWidget->isVisible()) {
         return m_transitionWidget->stackOwner();
     }
-    if (!m_effectStackWidget->isVisible()) {
-        return ObjectId(ObjectType::NoItem, -1);
+    if (m_mixWidget->isVisible()) {
+        return m_mixWidget->stackOwner();
     }
-    return m_effectStackWidget->stackOwner();
+    return ObjectId(ObjectType::NoItem, -1);
 }
 
 bool AssetPanel::addEffect(const QString &effectId)
@@ -389,7 +436,25 @@ void AssetPanel::enableStack(bool enable)
 void AssetPanel::deleteCurrentEffect()
 {
     if (m_effectStackWidget->isVisible()) {
-        m_effectStackWidget->removeCurrentEffect();
+        emit m_effectStackWidget->removeCurrentEffect();
+    }
+}
+
+void AssetPanel::collapseCurrentEffect()
+{
+    if (m_effectStackWidget->isVisible()) {
+        m_effectStackWidget->switchCollapsed();
+    }
+}
+
+void AssetPanel::scrollTo(QRect rect)
+{
+    // Ensure the scrollview widget adapted its height to the effectstackview height change
+    m_sc->widget()->adjustSize();
+    if (rect.height() < m_sc->height()) {
+        m_sc->ensureVisible(0, rect.y() + rect.height(), 0, 0);
+    } else {
+        m_sc->ensureVisible(0, rect.y() + m_sc->height(), 0, 0);
     }
 }
 
@@ -402,5 +467,22 @@ void AssetPanel::slotCheckWheelEventFilter()
         // widget has scroll bar,
         blockWheel = true;
     }
-    m_effectStackWidget->blockWheenEvent(blockWheel);
+    emit m_effectStackWidget->blockWheenEvent(blockWheel);
+}
+
+void AssetPanel::assetPanelWarning(const QString service, const QString /*id*/, const QString message)
+{
+    QString finalMessage;
+    if (!service.isEmpty() && EffectsRepository::get()->exists(service)) {
+        QString effectName = EffectsRepository::get()->getName(service);
+        if (!effectName.isEmpty()) {
+            finalMessage = QStringLiteral("<b>") + effectName + QStringLiteral("</b><br />");
+        }
+    }
+    finalMessage.append(message);
+    m_infoMessage->setText(finalMessage);
+    m_infoMessage->setWordWrap(message.length() > 35);
+    m_infoMessage->setCloseButtonVisible(true);
+    m_infoMessage->setMessageType(KMessageWidget::Warning);
+    m_infoMessage->animatedShow();
 }

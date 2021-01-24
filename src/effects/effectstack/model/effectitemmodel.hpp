@@ -41,7 +41,7 @@ public:
     /* This construct an effect with an already existing filter
        Only used when loading an existing clip
      */
-    static std::shared_ptr<EffectItemModel> construct(std::unique_ptr<Mlt::Properties> effect, std::shared_ptr<AbstractTreeModel> stack);
+    static std::shared_ptr<EffectItemModel> construct(std::unique_ptr<Mlt::Properties> effect, std::shared_ptr<AbstractTreeModel> stack, QString originalDecimalPoint);
 
     /* @brief This function plants the effect into the given service in last position
      */
@@ -57,6 +57,7 @@ public:
 
     /* @brief Return true if the effect applies only to audio */
     bool isAudio() const override;
+    bool isUnique() const override;
 
     void setCollapsed(bool collapsed);
     bool isCollapsed();
@@ -64,9 +65,9 @@ public:
 
 protected:
     EffectItemModel(const QList<QVariant> &effectData, std::unique_ptr<Mlt::Properties> effect, const QDomElement &xml, const QString &effectId,
-                    const std::shared_ptr<AbstractTreeModel> &stack, bool isEnabled = true);
+                    const std::shared_ptr<AbstractTreeModel> &stack, bool isEnabled = true, QString originalDecimalPoint = QString());
     QMap<int, std::shared_ptr<EffectItemModel>> m_childEffects;
-    void updateEnable() override;
+    void updateEnable(bool updateTimeline = true) override;
     int m_childId;
 };
 

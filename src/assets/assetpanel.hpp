@@ -30,6 +30,7 @@
 
 class KSqueezedTextLabel;
 class KDualAction;
+class KMessageWidget;
 class QToolButton;
 class QComboBox;
 class QScrollArea;
@@ -43,6 +44,7 @@ class AssetParameterView;
 class EffectStackModel;
 class EffectStackView;
 class TransitionStackView;
+class MixStackView;
 class QLabel;
 
 class AssetPanel : public QWidget
@@ -54,6 +56,8 @@ public:
 
     /* @brief Shows the parameters of the given transition model */
     void showTransition(int tid, const std::shared_ptr<AssetParameterModel> &transition_model);
+    /* @brief Shows the parameters of the given mix model */
+    void showMix(int cid, const std::shared_ptr<AssetParameterModel> &transitionModel);
 
     /* @brief Shows the parameters of the given effect stack model */
     void showEffectStack(const QString &itemName, const std::shared_ptr<EffectStackModel> &effectsModel, QSize frameSize, bool showKeyframes);
@@ -71,7 +75,10 @@ public:
 public slots:
     /** @brief Clear panel if displaying itemId */
     void clearAssetPanel(int itemId);
+    void assetPanelWarning(const QString service, const QString id, const QString message);
     void deleteCurrentEffect();
+    /** @brief Collapse/expand current effect */
+    void collapseCurrentEffect();
     void slotCheckWheelEventFilter();
 
 protected:
@@ -81,6 +88,7 @@ protected:
     KSqueezedTextLabel *m_assetTitle;
     QWidget *m_container;
     TransitionStackView *m_transitionWidget;
+    MixStackView *m_mixWidget;
     EffectStackView *m_effectStackWidget;
 
 private:
@@ -92,6 +100,7 @@ private:
     KDualAction *m_enableStackButton;
     KDualAction *m_timelineButton;
     QScrollArea *m_sc;
+    KMessageWidget *m_infoMessage;
 
 private slots:
     void processSplitEffect(bool enable);
@@ -99,6 +108,8 @@ private slots:
     void showKeyframes(bool enable);
     /** Enable / disable effect stack */
     void enableStack(bool enable);
+    /** Scroll effects view */
+    void scrollTo(QRect rect);
 
 signals:
     void doSplitEffect(bool);

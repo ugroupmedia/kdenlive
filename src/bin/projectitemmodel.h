@@ -68,7 +68,8 @@ public:
     /** @brief Returns a clip from the hierarchy, given its id */
     std::shared_ptr<ProjectClip> getClipByBinID(const QString &binId);
     /** @brief Returns audio levels for a clip from its id */
-    const QVector <double>getAudioLevelsByBinID(const QString &binId);
+    const QVector <uint8_t>getAudioLevelsByBinID(const QString &binId, int stream);
+    double getAudioMaxLevel(const QString &binId);
 
     /** @brief Returns a list of clips using the given url */
     QStringList getClipByUrl(const QFileInfo &url) const;
@@ -78,6 +79,8 @@ public:
 
     /** @brief Gets a folder by its id. If none is found, nullptr is returned */
     std::shared_ptr<ProjectFolder> getFolderByBinId(const QString &binId);
+    /** @brief Gets a list of all folders in this project */
+    QList <std::shared_ptr<ProjectFolder> > getFolders();
     /** @brief Gets a id folder by its name. If none is found, empty string returned */
     const QString getFolderIdByName(const QString &folderName);
 
@@ -105,10 +108,10 @@ public:
     std::shared_ptr<AbstractProjectItem> getBinItemByIndex(const QModelIndex &index) const;
 
     /* @brief Load the folders given the property containing them */
-    bool loadFolders(Mlt::Properties &folders);
+    bool loadFolders(Mlt::Properties &folders, std::unordered_map<QString, QString> &binIdCorresp);
 
     /* @brief Parse a bin playlist from the document tractor and reconstruct the tree */
-    void loadBinPlaylist(Mlt::Tractor *documentTractor, Mlt::Tractor *modelTractor, std::unordered_map<QString, QString> &binIdCorresp, QProgressDialog *progressDialog = nullptr);
+    void loadBinPlaylist(Mlt::Tractor *documentTractor, Mlt::Tractor *modelTractor, std::unordered_map<QString, QString> &binIdCorresp, QStringList &expandedFolders, QProgressDialog *progressDialog = nullptr);
 
     /** @brief Save document properties in MLT's bin playlist */
     void saveDocumentProperties(const QMap<QString, QString> &props, const QMap<QString, QString> &metadata, std::shared_ptr<MarkerListModel> guideModel);
@@ -149,7 +152,6 @@ public:
        @param undo,redo: lambdas that are updated to accumulate operation.
     */
     bool requestAddFolder(QString &id, const QString &name, const QString &parentId, Fun &undo, Fun &redo);
-
     /* @brief Request creation of a bin clip
        @param id Id of the requested bin. If this is empty, it will be used as a return parameter to give the automatic bin id used.
        @param description Xml description of the clip
@@ -170,8 +172,8 @@ public:
        @param in,out : zone that corresponds to the subclip
        @param undo,redo: lambdas that are updated to accumulate operation.
     */
-    bool requestAddBinSubClip(QString &id, int in, int out, const QString &zoneName, const QString &parentId, Fun &undo, Fun &redo);
-    bool requestAddBinSubClip(QString &id, int in, int out, const QString &zoneName, const QString &parentId);
+    bool requestAddBinSubClip(QString &id, int in, int out, const QMap<QString, QString> zoneProperties, const QString &parentId, Fun &undo, Fun &redo);
+    bool requestAddBinSubClip(QString &id, int in, int out, const QMap<QString, QString> zoneProperties, const QString &parentId);
 
     /* @brief Request that a folder's name is changed
        @param clip : pointer to the folder to rename
@@ -183,13 +185,16 @@ public:
     bool requestRenameFolder(std::shared_ptr<AbstractProjectItem> folder, const QString &name);
 
     /* @brief Request that the unused clips are deleted */
-    bool requestCleanup();
+    bool requestCleanupUnused();
 
     /* @brief Retrieves the next id available for attribution to a folder */
     int getFreeFolderId();
 
     /* @brief Retrieves the next id available for attribution to a clip */
     int getFreeClipId();
+
+    /** @brief Check whether a given id is currently used or not*/
+    bool isIdFree(const QString &id) const;
 
     /** @brief Retrieve a list of proxy/original urls */
     QMap<QString, QString> getProxies(const QString &root);
@@ -200,6 +205,11 @@ public:
     /** @brief Set the status of the clip to "waiting". This happens when the corresponding file has changed*/
     void setClipWaiting(const QString &binId);
     void setClipInvalid(const QString &binId);
+
+    /** @brief Returns true if current project has a clip with id @clipId and a hash of @clipHash */
+    bool validateClip(const QString &binId, const QString &clipHash);
+    /** @brief Returns clip id if folder @folderId has a clip with hash of @clipHash or empty if not found */
+    QString validateClipInFolder(const QString &folderId, const QString &clipHash);
 
     /** @brief Number of clips in the bin playlist */
     int clipsCount() const;
@@ -225,8 +235,6 @@ public slots:
     void onItemUpdated(const std::shared_ptr<AbstractProjectItem> &item, int role);
     void onItemUpdated(const QString &binId, int role);
 
-    /** @brief Check whether a given id is currently used or not*/
-    bool isIdFree(const QString &id) const;
     void setDragType(PlaylistState::ClipState type);
     /** @brief Create the subclips defined in the parent clip.
     @param id is the id of the parent clip
@@ -258,6 +266,7 @@ signals:
     void itemDropped(const QStringList &, const QModelIndex &);
     void itemDropped(const QList<QUrl> &, const QModelIndex &);
     void effectDropped(const QStringList &, const QModelIndex &);
+    void addTag(const QString &, const QModelIndex &);
     void addClipCut(const QString &, int, int);
 };
 

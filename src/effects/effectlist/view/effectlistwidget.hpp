@@ -47,7 +47,8 @@ public:
     QString getMimeType(const QString &assetId) const override;
     void updateFavorite(const QModelIndex &index);
     void reloadEffectMenu(QMenu *effectsMenu, KActionCategory *effectActions);
-
+    void reloadCustomEffectIx(const QModelIndex &index) override;
+    void editCustomAsset(const QModelIndex &index) override;
 public slots:
     void reloadCustomEffect(const QString &path);
 
@@ -72,12 +73,15 @@ public:
     }
     Q_INVOKABLE QString getName(const QModelIndex &index) const { return q->getName(index); }
     Q_INVOKABLE bool isFavorite(const QModelIndex &index) const { return q->isFavorite(index); }
+    Q_INVOKABLE void reloadCustomEffectIx(const QModelIndex &index) const { q->reloadCustomEffectIx(index); }
     Q_INVOKABLE void setFavorite(const QModelIndex &index, bool favorite) const
     {
         q->setFavorite(index, favorite, true);
         q->updateFavorite(index);
     }
+    Q_INVOKABLE void deleteCustomEffect(const QModelIndex &index) { q->deleteCustomEffect(index); }
     Q_INVOKABLE QString getDescription(const QModelIndex &index) const { return q->getDescription(true, index); }
+    Q_INVOKABLE void editCustomEffectInfo(const QModelIndex &index){ q->editCustomAsset(index); }
     Q_INVOKABLE QVariantMap getMimeData(const QString &assetId) const { return q->getMimeData(assetId); }
 
     Q_INVOKABLE void activate(const QModelIndex &ix) { q->activate(ix); }

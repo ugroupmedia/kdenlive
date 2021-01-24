@@ -57,7 +57,7 @@ public:
        @param binClip is the id of the bin clip associated
        @param id Requested id of the clip. Automatic if -1
     */
-    static int construct(const std::shared_ptr<TimelineModel> &parent, const QString &binClipId, int id, PlaylistState::ClipState state, double speed = 1.);
+    static int construct(const std::shared_ptr<TimelineModel> &parent, const QString &binClipId, int id, PlaylistState::ClipState state, int audioStream = -1, double speed = 1., bool warp_pitch = false);
 
     /* @brief Creates a clip, which references itself to the parent timeline
        Returns the (unique) id of the created clip
@@ -65,13 +65,17 @@ public:
     Note that there is no guarantee that this producer is actually going to be used. It might be discarded.
     */
     static int construct(const std::shared_ptr<TimelineModel> &parent, const QString &binClipId, const std::shared_ptr<Mlt::Producer> &producer,
-                         PlaylistState::ClipState state);
+                         PlaylistState::ClipState state, int tid, QString originalDecimalPoint, int playlist = 0);
 
-    /* @brief returns a property of the clip, or from it's parent if it's a cut
+    /** @brief returns a property of the clip, or from it's parent if it's a cut
      */
     const QString getProperty(const QString &name) const override;
     int getIntProperty(const QString &name) const;
     double getDoubleProperty(const QString &name) const;
+    /** @brief returns the bin clip name
+     */
+    const QString clipName() const;
+    const QString clipTag() const;
     QSize getFrameSize() const;
     Q_INVOKABLE bool showKeyframes() const;
     Q_INVOKABLE void setShowKeyframes(bool show);
@@ -98,11 +102,18 @@ public:
     void setFakeTrackId(int fid);
     int getFakePosition() const;
     void setFakePosition(int fid);
+    void setMixDuration(int mix, int offset);
+    void setMixDuration(int mix);
+    int getMixDuration() const;
+    int getMixCutPosition() const;
     void setGrab(bool grab) override;
     void setSelected(bool sel) override;
 
     /* @brief Returns an XML representation of the clip with its effects */
     QDomElement toXml(QDomDocument &document);
+
+    /* @brief Retrieve a list of all snaps for this clip */
+    void allSnaps(std::vector<int> &snaps, int offset = 0);
 
 protected:
     // helper functions that creates the lambda
@@ -138,7 +149,7 @@ public:
 
     /**@brief Tracks have two sub playlists to enable same track transitions. This returns the index of the sub-playlist containing this clip */
     int getSubPlaylistIndex() const;
-    void setSubPlaylistIndex(int index);
+    void setSubPlaylistIndex(int index, int trackId);
 
     friend class TrackModel;
     friend class TimelineModel;
@@ -158,7 +169,7 @@ protected:
        @param undo Lambda function containing the current undo stack. Will be updated with current operation
        @param redo Lambda function containing the current redo queue. Will be updated with current operation
     */
-    bool requestResize(int size, bool right, Fun &undo, Fun &redo, bool logUndo = true) override;
+    bool requestResize(int size, bool right, Fun &undo, Fun &redo, bool logUndo = true, bool hasMix = false) override;
 
     void setCurrentTrackId(int tid, bool finalMove = true) override;
     void setPosition(int pos) override;
@@ -173,21 +184,27 @@ protected:
      * @param speed corresponds to the speed we need. Leave to 0 to keep current speed. Warning: this function doesn't notify the model. Unless you know what
      * you are doing, better use useTimewarProducer to change the speed
      */
-    void refreshProducerFromBin(int trackId, PlaylistState::ClipState state, double speed = 0);
-    void refreshProducerFromBin(int trackId = -1);
+    void refreshProducerFromBin(int trackId, PlaylistState::ClipState state, int stream, double speed, bool hasPitch, bool secondPlaylist = false);
+    void refreshProducerFromBin(int trackId);
 
     /* @brief This functions replaces the current producer with a slowmotion one
        It also resizes the producer so that set of frames contained in the clip is the same
     */
-    bool useTimewarpProducer(double speed, bool changeDuration, Fun &undo, Fun &redo);
+    bool useTimewarpProducer(double speed, bool pitchCompensate, bool changeDuration, Fun &undo, Fun &redo);
     // @brief Lambda that merely changes the speed (in and out are untouched)
-    Fun useTimewarpProducer_lambda(double speed);
+    Fun useTimewarpProducer_lambda(double speed, int stream, bool pitchCompensate);
 
     /** @brief Returns the marker model associated with this clip */
     std::shared_ptr<MarkerListModel> getMarkerModel() const;
 
     /** @brief Returns the number of audio channels for this clip */
     int audioChannels() const;
+    /** @brief Returns the active audio stream for this clip (or -1 if we only have 1 stream */
+    int audioStream() const;
+    /** @brief Returns true if we have multiple audio streams in the master clip */
+    bool audioMultiStream() const;
+    /** @brief Returns the list of available audio stream indexes for the bin clip */
+    int audioStreamIndex() const;
 
     bool audioEnabled() const;
     bool isAudioOnly() const;
@@ -200,6 +217,9 @@ protected:
     int getOffset() const;
     /** @brief Returns the producer's duration, or -1 if it can be resized without limit  */
     int getMaxDuration() const;
+
+    /** @brief Returns the clip status (normal, proxied, missing, etc)  */
+    FileStatus::ClipStatus clipStatus() const;
 
     /*@brief This is a debug function to ensure the clip is in a valid state */
     bool checkConsistency();
@@ -233,6 +253,11 @@ protected:
 
     // Remember last set track, so that we don't unnecessarily refresh the producer when deleting and re-adding a clip on same track
     int m_lastTrackId = -1;
+
+    // Duration of a same track mix.
+    int m_mixDuration;
+    // Position of the original cut, relative to mix right side
+    int m_mixCutPos;
 };
 
 #endif

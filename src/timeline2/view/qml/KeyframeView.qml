@@ -148,7 +148,7 @@ Rectangle
                             if (newPos < 1) {
                                 newPos = 1
                             }
-                            if (newPos != dragPos) {
+                            if (newPos != dragPos && (newPos == 0 || !timeline.hasKeyframeAt(masterObject.clipId, frame + newPos))) {
                                 dragPos = newPos
                                 parent.x = newPos * timeScale
                                 keyframecanvas.requestPaint()
@@ -222,7 +222,7 @@ Rectangle
                                     if (frame + newPos <= inPoint) {
                                         newPos = inPoint + 1 - frame
                                     }
-                                    if (newPos != dragPos) {
+                                    if (newPos != dragPos && (newPos == 0 || !timeline.hasKeyframeAt(masterObject.clipId, frame + newPos))) {
                                         dragPos = newPos
                                         parent.x = newPos * timeScale - root.baseUnit / 2
                                         keyframecanvas.requestPaint()
@@ -266,8 +266,9 @@ Rectangle
             if (kfrCount < 2) {
                 return
             }
-            context.beginPath()
-            context.fillStyle = Qt.rgba(0,0,0.8, 0.5);
+            var ctx = getContext("2d");
+            ctx.beginPath()
+            ctx.fillStyle = Qt.rgba(0,0,0.8, 0.5);
             paths = []
             var xpos
             var ypos
@@ -291,10 +292,10 @@ Rectangle
             paths.push(compline.createObject(keyframecanvas, {"x": parent.width, "y": ypos} ))
             paths.push(compline.createObject(keyframecanvas, {"x": parent.width, "y": parent.height} ))
             myPath.pathElements = paths
-            context.clearRect(0,0, width, height);
-            context.path = myPath;
-            context.closePath()
-            context.fill()
+            ctx.clearRect(0,0, width, height);
+            ctx.path = myPath;
+            ctx.closePath()
+            ctx.fill()
         }
     }
 }

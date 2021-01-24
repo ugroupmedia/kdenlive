@@ -1,29 +1,23 @@
-project(Kdenlive)
+cmake_minimum_required(VERSION 3.0)
 
 # An odd patch version number means development version, while an even one means
 # stable release. An additional number can be used for bugfix-only releases.
 
 # KDE Application Version, managed by release script
-set(KDE_APPLICATIONS_VERSION_MAJOR "19")
-set(KDE_APPLICATIONS_VERSION_MINOR "12")
-set(KDE_APPLICATIONS_VERSION_MICRO "1")
-set (KDE_APPLICATIONS_VERSION_NANO "1")
+set (RELEASE_SERVICE_VERSION_MAJOR "20")
+set (RELEASE_SERVICE_VERSION_MINOR "12")
+set (RELEASE_SERVICE_VERSION_MICRO "1")
+set (RELEASE_SERVICE_VERSION_NANO "1")
 
-set(KDENLIVE_VERSION ${KDE_APPLICATIONS_VERSION_MAJOR}.${KDE_APPLICATIONS_VERSION_MINOR}.${KDE_APPLICATIONS_VERSION_MICRO}.${KDE_APPLICATIONS_VERSION_NANO})
+set(KDENLIVE_VERSION "${RELEASE_SERVICE_VERSION_MAJOR}.${RELEASE_SERVICE_VERSION_MINOR}.${RELEASE_SERVICE_VERSION_MICRO}")
 
-cmake_minimum_required(VERSION 3.0)
+project(Kdenlive VERSION ${KDENLIVE_VERSION})
+
 if(POLICY CMP0063)
   cmake_policy(SET CMP0063 NEW)
 endif()
 if(POLICY CMP0053)
     cmake_policy(SET CMP0053 NEW)
-endif()
-
-if(BUILD_FUZZING)
-  set(CMAKE_CXX_FLAGS "${KDENLIVE_CXX_FLAGS} -fsanitize=fuzzer-no-link,address")
-endif()
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unknown-warning-option")
 endif()
 
 # To be switched on when releasing.
@@ -33,7 +27,7 @@ option(BUILD_FUZZING "Build fuzzing target" OFF)
 
 # Minimum versions of main dependencies.
 set(MLT_MIN_MAJOR_VERSION 6)
-set(MLT_MIN_MINOR_VERSION 18)
+set(MLT_MIN_MINOR_VERSION 20)
 set(MLT_MIN_PATCH_VERSION 0)
 set(MLT_MIN_VERSION ${MLT_MIN_MAJOR_VERSION}.${MLT_MIN_MINOR_VERSION}.${MLT_MIN_PATCH_VERSION})
 
@@ -58,9 +52,9 @@ find_package(KF5 REQUIRED COMPONENTS Archive Bookmarks CoreAddons Config ConfigW
 
 # Qt
 set(QT_MIN_VERSION 5.11.0)
-find_package(Qt5 REQUIRED COMPONENTS Core DBus Widgets Svg Quick Concurrent QuickWidgets Multimedia)
+find_package(Qt5 REQUIRED COMPONENTS Core DBus Widgets Svg Quick QuickControls2 Concurrent QuickWidgets Multimedia)
 add_definitions(-DQT_NO_CAST_TO_ASCII -DQT_NO_URL_CAST_FROM_STRING)
-set(DEFAULT_CXX_FLAGS "${DEFAULT_CXX_FLAGS} ${Qt5Widgets_EXECUTABLE_COMPILE_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${Qt5Widgets_EXECUTABLE_COMPILE_FLAGS}")
 
 # MLT
 find_package(MLT ${MLT_MIN_VERSION} REQUIRED)
@@ -78,7 +72,7 @@ if(WIN32)
     set(MLT_PREFIX "..")
 else()
     set(MLT_PREFIX ${MLT_ROOT_DIR})
-    find_package(Qt5 OPTIONAL_COMPONENTS WebKitWidgets QUIET)
+    find_package(Qt5 OPTIONAL_COMPONENTS WebEngineWidgets QUIET)
 endif()
 
 if(KF5FileMetaData_FOUND)
@@ -126,7 +120,11 @@ feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAG
 
 set(FFMPEG_SUFFIX "" CACHE STRING "FFmpeg custom suffix")
 configure_file(config-kdenlive.h.cmake config-kdenlive.h @ONLY)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -Wno-suggest-override")
+set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
+
+if(BUILD_FUZZING)
+    set(ECM_ENABLE_SANITIZERS fuzzer;address)
+endif()
 
 # Sources
 add_subdirectory(src)
@@ -144,33 +142,11 @@ else()
     install(FILES kdenlive.categories DESTINATION ${KDE_INSTALL_LOGGINGCATEGORIESDIR})
 endif()
 
-############################
 # Tests
-############################
-
 if(BUILD_TESTING)
-    message(STATUS "Building tests")
     add_subdirectory(tests)
-
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -fexceptions")
-    include_directories(
-        ${CMAKE_BINARY_DIR}
-        ${CMAKE_BINARY_DIR}/src
-        ${MLT_INCLUDE_DIR}
-        ${MLTPP_INCLUDE_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/lib/external
-        ${CMAKE_CURRENT_SOURCE_DIR}/lib
-        src)
-    add_executable(runTests ${Tests_SRCS})
-    set_property(TARGET runTests PROPERTY CXX_STANDARD 14)
-    target_link_libraries(runTests kdenliveLib)
-    add_test(NAME runTests COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/runTests -d yes)
 endif()
-
-if(BUILD_FUZZING)
-    message(STATUS "Building fuzzing")
-	set(CMAKE_CXX_COMPILER /usr/bin/clang++)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KDENLIVE_CXX_FLAGS} -fsanitize=fuzzer-no-link,address")
+if(BUILD_FUZZING AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang"))
     add_subdirectory(fuzzer)
 endif()
 

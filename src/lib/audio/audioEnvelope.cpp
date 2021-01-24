@@ -15,7 +15,7 @@
 #include "core.h"
 #include "kdenlive_debug.h"
 #include <QImage>
-#include <QTime>
+#include <QElapsedTimer>
 #include <QtConcurrent>
 #include <KLocalizedString>
 #include <algorithm>
@@ -37,7 +37,7 @@ AudioEnvelope::AudioEnvelope(const QString &binId, int clipId, size_t offset, si
     m_envelopeSize = (size_t)m_producer->get_playtime();
 
     m_producer->set("set.test_image", 1);
-    connect(&m_watcher, &QFutureWatcherBase::finished, this, [this] { envelopeReady(this); });
+    connect(&m_watcher, &QFutureWatcherBase::finished, this, [this] { emit envelopeReady(this); });
     if (!m_producer || !m_producer->is_valid()) {
         qCDebug(KDENLIVE_LOG) << "// Cannot create envelope for producer: " << binId;
     } else {
@@ -54,7 +54,7 @@ AudioEnvelope::~AudioEnvelope()
         // finished, m_watcher might be finished, but the signal
         // 'envelopeReady' might still be pending while AudioEnvelope is
         // being deleted, which can cause a crash according to
-        // http://doc.qt.io/qt-5/qobject.html#dtor.QObject.
+        // https://doc.qt.io/qt-5/qobject.html#dtor.QObject.
         m_audioSummary.waitForFinished();
         m_watcher.waitForFinished();
     }
@@ -69,7 +69,7 @@ void AudioEnvelope::startComputeEnvelope()
 bool AudioEnvelope::hasComputationStarted() const
 {
     // An empty qFuture is canceled. QtConcurrent::run() returns a
-    // future that does not support cancelation, so this is a good way
+    // future that does not support cancellation, so this is a good way
     // to check whether the computations have started.
     return !m_audioSummary.isCanceled();
 }
@@ -106,7 +106,7 @@ AudioEnvelope::AudioSummary AudioEnvelope::loadAndNormalizeEnvelope() const
     mlt_audio_format format_s16 = mlt_audio_s16;
     int channels = 1;
 
-    QTime t;
+    QElapsedTimer t;
     t.start();
     m_producer->seek(0);
     size_t max = summary.audioAmplitudes.size();

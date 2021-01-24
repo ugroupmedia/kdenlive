@@ -23,6 +23,7 @@
 #include "bin/binplaylist.hpp"
 #include "bin/clipcreator.hpp"
 #include "bin/model/markerlistmodel.hpp"
+#include "bin/model/subtitlemodel.hpp"
 #include "bin/projectclip.h"
 #include "bin/projectitemmodel.h"
 #include "core.h"
@@ -68,10 +69,10 @@
 #include <xlocale.h>
 #endif
 
-const double DOCUMENTVERSION = 0.99;
+const double DOCUMENTVERSION = 1.00;
 
 KdenliveDoc::KdenliveDoc(const QUrl &url, QString projectFolder, QUndoGroup *undoGroup, const QString &profileName, const QMap<QString, QString> &properties,
-                         const QMap<QString, QString> &metadata, const QPoint &tracks, bool *openBackup, MainWindow *parent)
+                         const QMap<QString, QString> &metadata, const QPair<int, int> &tracks, int audioChannels, bool *openBackup, MainWindow *parent)
     : QObject(parent)
     , m_autosave(nullptr)
     , m_url(url)
@@ -80,15 +81,15 @@ KdenliveDoc::KdenliveDoc(const QUrl &url, QString projectFolder, QUndoGroup *und
     , m_modified(false)
     , m_documentOpenStatus(CleanProject)
     , m_projectFolder(std::move(projectFolder))
+    , m_guideModel(new MarkerListModel(m_commandStack, this))
 {
-    m_guideModel.reset(new MarkerListModel(m_commandStack, this));
     connect(m_guideModel.get(), &MarkerListModel::modelChanged, this, &KdenliveDoc::guidesChanged);
     connect(this, SIGNAL(updateCompositionMode(int)), parent, SLOT(slotUpdateCompositeAction(int)));
     bool success = false;
     connect(m_commandStack.get(), &QUndoStack::indexChanged, this, &KdenliveDoc::slotModified);
-    connect(m_commandStack.get(), &DocUndoStack::invalidate, this, &KdenliveDoc::checkPreviewStack);
+    connect(m_commandStack.get(), &DocUndoStack::invalidate, this, &KdenliveDoc::checkPreviewStack, Qt::DirectConnection);
     // connect(m_commandStack, SIGNAL(cleanChanged(bool)), this, SLOT(setModified(bool)));
-
+    
     // init default document properties
     m_documentProperties[QStringLiteral("zoom")] = QLatin1Char('8');
     m_documentProperties[QStringLiteral("verticalzoom")] = QLatin1Char('1');
@@ -106,9 +107,10 @@ KdenliveDoc::KdenliveDoc(const QUrl &url, QString projectFolder, QUndoGroup *und
     m_documentProperties[QStringLiteral("generateimageproxy")] = QString::number((int)KdenliveSettings::generateimageproxy());
     m_documentProperties[QStringLiteral("proxyimageminsize")] = QString::number(KdenliveSettings::proxyimageminsize());
     m_documentProperties[QStringLiteral("proxyimagesize")] = QString::number(KdenliveSettings::proxyimagesize());
-    m_documentProperties[QStringLiteral("videoTarget")] = QString::number(tracks.y());
-    m_documentProperties[QStringLiteral("audioTarget")] = QString::number(tracks.y() - 1);
-    m_documentProperties[QStringLiteral("activeTrack")] = QString::number(tracks.y());
+    m_documentProperties[QStringLiteral("videoTarget")] = QString::number(tracks.second);
+    m_documentProperties[QStringLiteral("audioTarget")] = QString::number(tracks.second - 1);
+    m_documentProperties[QStringLiteral("activeTrack")] = QString::number(tracks.second);
+    m_documentProperties[QStringLiteral("audioChannels")] = QString::number(audioChannels);
     m_documentProperties[QStringLiteral("enableTimelineZone")] = QLatin1Char('0');
     m_documentProperties[QStringLiteral("zonein")] = QLatin1Char('0');
     m_documentProperties[QStringLiteral("zoneout")] = QStringLiteral("75");
@@ -127,25 +129,12 @@ KdenliveDoc::KdenliveDoc(const QUrl &url, QString projectFolder, QUndoGroup *und
         j.next();
         m_documentMetadata[j.key()] = j.value();
     }
-    /*if (QLocale().decimalPoint() != QLocale::system().decimalPoint()) {
-        qDebug()<<"* * ** AARCH DOCUMENT  PROBLEM;";
-        exit(1);
-        setlocale(LC_NUMERIC, "");
-        QLocale systemLocale = QLocale::system();
-        systemLocale.setNumberOptions(QLocale::OmitGroupSeparator);
-        QLocale::setDefault(systemLocale);
-        // locale conversion might need to be redone
-        ///TODO: how to reset repositories...
-        //EffectsRepository::get()->init();
-        //TransitionsRepository::get()->init();
-        //initEffects::parseEffectFiles(pCore->getMltRepository(), QString::fromLatin1(setlocale(LC_NUMERIC, nullptr)));
-    }*/
     *openBackup = false;
     if (url.isValid()) {
         QFile file(url.toLocalFile());
         if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
             // The file cannot be opened
-            if (KMessageBox::warningContinueCancel(parent, i18n("Cannot open the project file,\nDo you want to open a backup file?"),
+            if (KMessageBox::warningContinueCancel(parent, i18n("Cannot open the project file %1,\nDo you want to open a backup file?", file.fileName()),
                                                    i18n("Error opening file"), KGuiItem(i18n("Open Backup"))) == KMessageBox::Continue) {
                 *openBackup = true;
             }
@@ -220,7 +209,14 @@ KdenliveDoc::KdenliveDoc(const QUrl &url, QString projectFolder, QUndoGroup *und
                      * and recover it if needed). It is NOT a passive operation
                      */
                     // TODO: backup the document or alert the user?
-                    success = validator.validate(DOCUMENTVERSION);
+                    auto validationResult = validator.validate(DOCUMENTVERSION);
+                    success = validationResult.first;
+
+                    if (!validationResult.second.isEmpty()) {
+                        qDebug() << "DECIMAL POINT has changed to ., was " << validationResult.second;
+                        m_modifiedDecimalPoint = validationResult.second;
+                    }
+
                     if (success && !KdenliveSettings::gpu_accel()) {
                         success = validator.checkMovit();
                     }
@@ -252,7 +248,7 @@ KdenliveDoc::KdenliveDoc(const QUrl &url, QString projectFolder, QUndoGroup *und
     if (!success) {
         m_url.clear();
         pCore->setCurrentProfile(profileName);
-        m_document = createEmptyDocument(tracks.x(), tracks.y());
+        m_document = createEmptyDocument(tracks.first, tracks.second);
         updateProjectProfile(false);
     } else {
         m_clipsCount = m_document.elementsByTagName(QLatin1String("entry")).size();
@@ -313,7 +309,7 @@ int KdenliveDoc::clipsCount() const
 }
 
 
-const QByteArray KdenliveDoc::getProjectXml()
+const QByteArray KdenliveDoc::getAndClearProjectXml()
 {
     const QByteArray result = m_document.toString().toUtf8();
     // We don't need the xml data anymore, throw away
@@ -348,10 +344,10 @@ QDomDocument KdenliveDoc::createEmptyDocument(int videotracks, int audiotracks)
         videoTrack.duration = 0;
         tracks.append(videoTrack);
     }
-    return createEmptyDocument(tracks, audiotracks);
+    return createEmptyDocument(tracks);
 }
 
-QDomDocument KdenliveDoc::createEmptyDocument(const QList<TrackInfo> &tracks, int audiotracks)
+QDomDocument KdenliveDoc::createEmptyDocument(const QList<TrackInfo> &tracks)
 {
     // Creating new document
     QDomDocument doc;
@@ -363,21 +359,13 @@ QDomDocument KdenliveDoc::createEmptyDocument(const QList<TrackInfo> &tracks, in
     Mlt::Tractor tractor(docProfile);
     Mlt::Producer bk(docProfile, "color:black");
     tractor.insert_track(bk, 0);
-    bool firstVideoTrackFound = false;
     for (int i = 0; i < tracks.count(); ++i) {
         Mlt::Tractor track(docProfile);
         track.set("kdenlive:track_name", tracks.at(i).trackName.toUtf8().constData());
+        track.set("kdenlive:timeline_active", 1);
         track.set("kdenlive:trackheight", KdenliveSettings::trackheight());
         if (tracks.at(i).type == AudioTrack) {
             track.set("kdenlive:audio_track", 1);
-            if (i == audiotracks - 1) {
-                // top most audio track, make active by default
-                track.set("kdenlive:timeline_active", 1);
-            }
-        } else if (!firstVideoTrackFound) {
-            firstVideoTrackFound = true;
-            // bottom video track, make active by default
-            track.set("kdenlive:timeline_active", 1);
         }
         if (tracks.at(i).isLocked) {
             track.set("kdenlive:locked_track", 1);
@@ -407,6 +395,7 @@ QDomDocument KdenliveDoc::createEmptyDocument(const QList<TrackInfo> &tracks, in
                 tr.set("b_track", i);
                 tr.set("always_active", 1);
                 tr.set("sum", 1);
+                tr.set("accepts_blanks", 1);
                 tr.set("internal_added", 237);
                 field->plant_transition(tr, 0, i);
             }
@@ -529,7 +518,7 @@ QDomDocument KdenliveDoc::xmlSceneList(const QString &scene)
         qDebug()<<" = = = =  = =  CORRUPTED DOC\n"<<scene;
         return QDomDocument();
     }
-    
+
     QDomNodeList pls = mlt.elementsByTagName(QStringLiteral("playlist"));
     QDomElement mainPlaylist;
     for (int i = 0; i < pls.count(); ++i) {
@@ -624,22 +613,22 @@ bool KdenliveDoc::saveSceneList(const QString &path, const QString &scene)
                      backupFile));
         }
     }
-    QFile file(path);
+    QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         qCWarning(KDENLIVE_LOG) << "//////  ERROR writing to file: " << path;
         KMessageBox::error(QApplication::activeWindow(), i18n("Cannot write to file %1", path));
         return false;
     }
 
-    file.write(sceneList.toString().toUtf8());
-    if (file.error() != QFile::NoError) {
+    const QByteArray sceneData = sceneList.toString().toUtf8();
+
+    file.write(sceneData);
+    if (!file.commit()) {
         KMessageBox::error(QApplication::activeWindow(), i18n("Cannot write to file %1", path));
-        file.close();
         return false;
     }
-    file.close();
     cleanupBackupFiles();
-    QFileInfo info(file);
+    QFileInfo info(path);
     QString fileName = QUrl::fromLocalFile(path).fileName().section(QLatin1Char('.'), 0, -2);
     fileName.append(QLatin1Char('-') + m_documentProperties.value(QStringLiteral("documentid")));
     fileName.append(info.lastModified().toString(QStringLiteral("-yyyy-MM-dd-hh-mm")));
@@ -663,7 +652,10 @@ QString KdenliveDoc::projectDataFolder() const
         if (KdenliveSettings::customprojectfolder()) {
             return KdenliveSettings::defaultprojectfolder();
         }
-        return QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
+        if (KdenliveSettings::videotodefaultfolder() || KdenliveSettings::videofolder().isEmpty()) {
+            return QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
+        }
+        return KdenliveSettings::videofolder();
     }
     return m_projectFolder;
 }
@@ -689,7 +681,6 @@ void KdenliveDoc::setProjectFolder(const QUrl &url)
 void KdenliveDoc::moveProjectData(const QString & /*src*/, const QString &dest)
 {
     // Move proxies
-
     QList<QUrl> cacheUrls;
     auto binClips = pCore->projectItemModel()->getAllClipIds();
     // First step: all clips referenced by the bin model exist and are inserted
@@ -720,7 +711,7 @@ void KdenliveDoc::moveProjectData(const QString & /*src*/, const QString &dest)
         if (proxyDir.mkpath(QStringLiteral("."))) {
             KIO::CopyJob *job = KIO::move(cacheUrls, QUrl::fromLocalFile(proxyDir.absolutePath()));
             KJobWidgets::setWindow(job, QApplication::activeWindow());
-            if (static_cast<int>(job->exec()) > 0) {
+            if (!job->exec()) {
                 KMessageBox::sorry(QApplication::activeWindow(), i18n("Moving proxy clips failed: %1", job->errorText()));
             }
         }
@@ -974,6 +965,17 @@ void KdenliveDoc::setUrl(const QUrl &url)
     m_url = url;
 }
 
+void KdenliveDoc::updateSubtitle(QString newUrl)
+{
+    if (auto ptr = m_subtitleModel.lock()) {
+        QString subPath;
+        bool checkOverwrite = QUrl::fromLocalFile(newUrl) != m_url;
+        QFileInfo info(newUrl);
+        subPath = info.dir().absoluteFilePath(QString("%1.srt").arg(info.fileName()));
+        ptr->copySubtitle(subPath, checkOverwrite);
+    }
+}
+
 void KdenliveDoc::slotModified()
 {
     setModified(!m_commandStack->isClean());
@@ -1131,7 +1133,6 @@ void KdenliveDoc::saveCustomEffects(const QDomNodeList &customeffects)
     for (int i = 0; i < maxchild; ++i) {
         e = customeffects.at(i).toElement();
         const QString id = e.attribute(QStringLiteral("id"));
-        const QString tag = e.attribute(QStringLiteral("tag"));
         if (!id.isEmpty()) {
             // Check if effect exists or save it
             if (EffectsRepository::get()->exists(id)) {
@@ -1163,7 +1164,7 @@ void KdenliveDoc::updateProjectFolderPlacesEntry()
 {
     /*
      * For similar and more code have a look at kfileplacesmodel.cpp and the included files:
-     * http://websvn.kde.org/trunk/KDE/kdelibs/kfile/kfileplacesmodel.cpp?view=markup
+     * https://api.kde.org/frameworks/kio/html/kfileplacesmodel_8cpp_source.html
      */
 
     const QString file = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + QStringLiteral("/user-places.xbel");
@@ -1414,7 +1415,7 @@ void KdenliveDoc::slotProxyCurrentItem(bool doProxy, QList<std::shared_ptr<Proje
         // Only allow proxy on some clip types
         if ((t == ClipType::Video || t == ClipType::AV || t == ClipType::Unknown || t == ClipType::Image || t == ClipType::Playlist ||
              t == ClipType::SlideShow) &&
-            item->isReady()) {
+            item->statusReady()) {
             if ((doProxy && !force && item->hasProxy()) ||
                 (!doProxy && !item->hasProxy() && pCore->projectItemModel()->hasClip(item->AbstractProjectItem::clipId()))) {
                 continue;
@@ -1483,11 +1484,19 @@ QMap<QString, QString> KdenliveDoc::documentProperties()
                                     m_projectFolder + QLatin1Char('/') + m_documentProperties.value(QStringLiteral("documentid")));
     }
     m_documentProperties.insert(QStringLiteral("profile"), pCore->getCurrentProfile()->path());
-    ;
-    if (!m_documentProperties.contains(QStringLiteral("decimalPoint"))) {
-        m_documentProperties.insert(QStringLiteral("decimalPoint"), QLocale().decimalPoint());
+    if (m_documentProperties.contains(QStringLiteral("decimalPoint"))) {
+        // "kdenlive:docproperties.decimalPoint" was removed in document version 100
+        m_documentProperties.remove(QStringLiteral("decimalPoint"));
     }
     return m_documentProperties;
+}
+
+void KdenliveDoc::loadDocumentGuides()
+{
+    QString guides = m_documentProperties.value(QStringLiteral("guides"));
+    if (!guides.isEmpty()) {
+        m_guideModel->importFromJson(guides, true);
+    }
 }
 
 void KdenliveDoc::loadDocumentProperties()
@@ -1496,13 +1505,14 @@ void KdenliveDoc::loadDocumentProperties()
     QDomElement baseElement = m_document.documentElement();
     m_documentRoot = baseElement.attribute(QStringLiteral("root"));
     if (!m_documentRoot.isEmpty()) {
-        m_documentRoot = QDir::cleanPath(m_documentRoot) + QDir::separator();
+        m_documentRoot = QDir::cleanPath(m_documentRoot) + QLatin1Char('/');
     }
     if (!list.isEmpty()) {
         QDomElement pl = list.at(0).toElement();
         if (pl.isNull()) {
             return;
         }
+        //QMetaObject::invokeMethod(m_subtitleModel.get(), "parseSubtitle", Qt::QueuedConnection);
         QDomNodeList props = pl.elementsByTagName(QStringLiteral("property"));
         QString name;
         QDomElement e;
@@ -1518,12 +1528,6 @@ void KdenliveDoc::loadDocumentProperties()
                         value.prepend(m_documentRoot);
                     }
                     m_documentProperties.insert(name, value);
-                } else if (name == QStringLiteral("guides")) {
-                    QString guides = e.firstChild().nodeValue();
-                    if (!guides.isEmpty()) {
-                        QMetaObject::invokeMethod(m_guideModel.get(), "importFromJson", Qt::QueuedConnection, Q_ARG(const QString &, guides), Q_ARG(bool, true),
-                                                  Q_ARG(bool, false));
-                    }
                 } else {
                     m_documentProperties.insert(name, e.firstChild().nodeValue());
                 }
@@ -1538,6 +1542,21 @@ void KdenliveDoc::loadDocumentProperties()
         QDir dir(path);
         dir.cdUp();
         m_projectFolder = dir.absolutePath();
+        bool ok;
+        // Ensure document storage folder is writable
+        QString documentId = QDir::cleanPath(getDocumentProperty(QStringLiteral("documentid")));
+        documentId.toLongLong(&ok, 10);
+        if (ok) {
+            if (!dir.exists(documentId)) {
+                if (!dir.mkpath(documentId)) {
+                    // Invalid storage folder, reset to default
+                    m_projectFolder.clear();
+                }
+            }
+        } else {
+            // Something is wrong, documentid not readable
+            qDebug()<<"=========\n\nCannot read document id: "<<documentId<<"\n\n==========";
+        }
     }
 
     QString profile = m_documentProperties.value(QStringLiteral("profile"));
@@ -1561,30 +1580,32 @@ void KdenliveDoc::loadDocumentProperties()
     updateProjectProfile(false);
 }
 
-void KdenliveDoc::updateProjectProfile(bool reloadProducers)
+void KdenliveDoc::updateProjectProfile(bool reloadProducers, bool reloadThumbs)
 {
     pCore->jobManager()->slotCancelJobs();
     double fps = pCore->getCurrentFps();
     double fpsChanged = m_timecode.fps() / fps;
     m_timecode.setFormat(fps);
-    pCore->monitorManager()->resetProfiles(m_timecode);
     if (!reloadProducers) {
         return;
     }
     emit updateFps(fpsChanged);
-    pCore->bin()->reloadAllProducers();
+    pCore->bin()->reloadAllProducers(reloadThumbs);
 }
 
-void KdenliveDoc::resetProfile()
+void KdenliveDoc::resetProfile(bool reloadThumbs)
 {
-    updateProjectProfile(true);
+    updateProjectProfile(true, reloadThumbs);
     emit docModified(true);
 }
 
-void KdenliveDoc::slotSwitchProfile(const QString &profile_path)
+void KdenliveDoc::slotSwitchProfile(const QString &profile_path, bool reloadThumbs)
 {
+    // Discard all current jobs
+    pCore->jobManager()->slotCancelJobs();
     pCore->setCurrentProfile(profile_path);
-    updateProjectProfile(true);
+    updateProjectProfile(true, reloadThumbs);
+    // In case we only have one clip in timeline, 
     emit docModified(true);
 }
 
@@ -1593,6 +1614,36 @@ void KdenliveDoc::switchProfile(std::unique_ptr<ProfileParam> &profile, const QS
     Q_UNUSED(id)
     Q_UNUSED(xml)
     // Request profile update
+    // Check profile fps so that we don't end up with an fps = 30.003 which would mess things up
+    QString adjustMessage;
+    double fps = (double)profile->frame_rate_num() / profile->frame_rate_den();
+    double fps_int;
+    double fps_frac = std::modf(fps, &fps_int);
+    if (fps_frac < 0.4) {
+        profile->m_frame_rate_num = (int)fps_int;
+        profile->m_frame_rate_den = 1;
+    } else {
+        // Check for 23.98, 29.97, 59.94
+        if (qFuzzyCompare(fps_int, 23.0)) {
+            if (qFuzzyCompare(fps, 23.98)) {
+                profile->m_frame_rate_num = 24000;
+                profile->m_frame_rate_den = 1001;
+            }
+        } else if (qFuzzyCompare(fps_int, 29.0)) {
+            if (qFuzzyCompare(fps, 29.97)) {
+                profile->m_frame_rate_num = 30000;
+                profile->m_frame_rate_den = 1001;
+            }
+        } else if (qFuzzyCompare(fps_int, 59.0)) {
+            if (qFuzzyCompare(fps, 59.94)) {
+                profile->m_frame_rate_num = 60000;
+                profile->m_frame_rate_den = 1001;
+            }
+        } else {
+            // Unknown profile fps, warn user
+            adjustMessage = i18n("\nWarning: unknown non integer fps, might cause incorrect duration display.");
+        }
+    }
     QString matchingProfile = ProfileRepository::get()->findMatchingProfile(profile.get());
     if (matchingProfile.isEmpty() && (profile->width() % 8 != 0)) {
         // Make sure profile width is a multiple of 8, required by some parts of mlt
@@ -1616,6 +1667,8 @@ void KdenliveDoc::switchProfile(std::unique_ptr<ProfileParam> &profile, const QS
 
             switch (answer) {
             case KMessageBox::Yes:
+                // Discard all current jobs
+                pCore->jobManager()->slotCancelJobs();
                 KdenliveSettings::setDefault_profile(profile->path());
                 pCore->setCurrentProfile(profile->path());
                 updateProjectProfile(true);
@@ -1634,42 +1687,12 @@ void KdenliveDoc::switchProfile(std::unique_ptr<ProfileParam> &profile, const QS
         QList<QAction *> list;
         const QString profilePath = profile->path();
         QAction *ac = new QAction(QIcon::fromTheme(QStringLiteral("dialog-ok")), i18n("Switch"), this);
-        connect(ac, &QAction::triggered, [this, profilePath]() { this->slotSwitchProfile(profilePath); });
+        connect(ac, &QAction::triggered, this, [this, profilePath]() { this->slotSwitchProfile(profilePath, true); });
         QAction *ac2 = new QAction(QIcon::fromTheme(QStringLiteral("dialog-cancel")), i18n("Cancel"), this);
         list << ac << ac2;
-        pCore->displayBinMessage(i18n("Switch to clip profile %1?", profile->descriptiveString()), KMessageWidget::Information, list);
+        pCore->displayBinMessage(i18n("Switch to clip profile %1?", profile->descriptiveString()), KMessageWidget::Information, list, false, BinMessage::BinCategory::ProfileMessage);
     } else {
         // No known profile, ask user if he wants to use clip profile anyway
-        // Check profile fps so that we don't end up with an fps = 30.003 which would mess things up
-        QString adjustMessage;
-        double fps = (double)profile->frame_rate_num() / profile->frame_rate_den();
-        double fps_int;
-        double fps_frac = std::modf(fps, &fps_int);
-        if (fps_frac < 0.4) {
-            profile->m_frame_rate_num = (int)fps_int;
-            profile->m_frame_rate_den = 1;
-        } else {
-            // Check for 23.98, 29.97, 59.94
-            if (qFuzzyCompare(fps_int, 23.0)) {
-                if (qFuzzyCompare(fps, 23.98)) {
-                    profile->m_frame_rate_num = 24000;
-                    profile->m_frame_rate_den = 1001;
-                }
-            } else if (qFuzzyCompare(fps_int, 29.0)) {
-                if (qFuzzyCompare(fps, 29.97)) {
-                    profile->m_frame_rate_num = 30000;
-                    profile->m_frame_rate_den = 1001;
-                }
-            } else if (qFuzzyCompare(fps_int, 59.0)) {
-                if (qFuzzyCompare(fps, 59.94)) {
-                    profile->m_frame_rate_num = 60000;
-                    profile->m_frame_rate_den = 1001;
-                }
-            } else {
-                // Unknown profile fps, warn user
-                adjustMessage = i18n("\nWarning: unknown non integer fps, might cause incorrect duration display.");
-            }
-        }
         if (qFuzzyCompare((double)profile->m_frame_rate_num / profile->m_frame_rate_den, fps)) {
             adjustMessage = i18n("\nProfile fps adjusted from original %1", QString::number(fps, 'f', 4));
         }
@@ -1682,6 +1705,8 @@ void KdenliveDoc::switchProfile(std::unique_ptr<ProfileParam> &profile, const QS
                                          .arg(profile->m_height)
                                          .arg(QString::number((double)profile->m_frame_rate_num / profile->m_frame_rate_den, 'f', 2));
             QString profilePath = ProfileRepository::get()->saveProfile(profile.get());
+            // Discard all current jobs
+            pCore->jobManager()->slotCancelJobs();
             pCore->setCurrentProfile(profilePath);
             updateProjectProfile(true);
             emit docModified(true);
@@ -1703,12 +1728,12 @@ QAction *KdenliveDoc::getAction(const QString &name)
 
 void KdenliveDoc::previewProgress(int p)
 {
-    pCore->window()->setPreviewProgress(p);
+    emit pCore->window()->setPreviewProgress(p);
 }
 
 void KdenliveDoc::displayMessage(const QString &text, MessageType type, int timeOut)
 {
-    pCore->window()->displayMessage(text, type, timeOut);
+    emit pCore->window()->displayMessage(text, type, timeOut);
 }
 
 void KdenliveDoc::selectPreviewProfile()
@@ -1753,7 +1778,7 @@ void KdenliveDoc::selectPreviewProfile()
             }
         }
         bool rateFound = false;
-        for (const QString &arg : data) {
+        for (const QString &arg : qAsConst(data)) {
             if (arg.startsWith(QStringLiteral("r="))) {
                 rateFound = true;
                 double fps = arg.section(QLatin1Char('='), 1).toDouble();
@@ -1812,10 +1837,10 @@ void KdenliveDoc::initProxySettings()
     m_proxyExtension = params.section(QLatin1Char(';'), 1);
 }
 
-void KdenliveDoc::checkPreviewStack()
+void KdenliveDoc::checkPreviewStack(int ix)
 {
     // A command was pushed in the middle of the stack, remove all cached data from last undos
-    emit removeInvalidUndo(m_commandStack->count());
+    emit removeInvalidUndo(ix);
 }
 
 void KdenliveDoc::saveMltPlaylist(const QString &fileName)
@@ -1935,3 +1960,51 @@ bool KdenliveDoc::updatePreviewSettings(const QString &profile)
     }
     return false;
 }
+
+QMap <QString, QString> KdenliveDoc::getProjectTags()
+{
+    QMap <QString, QString> tags;
+    for (int i = 1 ; i< 20; i++) {
+        QString current = getDocumentProperty(QString("tag%1").arg(i));
+        if (current.isEmpty()) {
+            break;
+        } else {
+            tags.insert(current.section(QLatin1Char(':'), 0, 0), current.section(QLatin1Char(':'), 1));
+        }
+    }
+    if (tags.isEmpty()) {
+        tags.insert(QStringLiteral("#ff0000"), i18n("Red"));
+        tags.insert(QStringLiteral("#00ff00"), i18n("Green"));
+        tags.insert(QStringLiteral("#0000ff"), i18n("Blue"));
+        tags.insert(QStringLiteral("#ffff00"), i18n("Yellow"));
+        tags.insert(QStringLiteral("#00ffff"), i18n("Cyan"));
+    }
+    return tags;
+}
+
+int KdenliveDoc::audioChannels() const
+{
+    return getDocumentProperty(QStringLiteral("audioChannels"), QStringLiteral("2")).toInt();
+}
+
+QString& KdenliveDoc::modifiedDecimalPoint() {
+    return m_modifiedDecimalPoint;
+}
+
+const QString KdenliveDoc::subTitlePath(bool final)
+{
+    QString path;
+    QString documentId = QDir::cleanPath(getDocumentProperty(QStringLiteral("documentid")));
+    if (m_url.isValid() && final) {
+        return QFileInfo(m_url.toLocalFile()).dir().absoluteFilePath(QString("%1.srt").arg(m_url.fileName()));
+    } else {
+        path = QDir::temp().absoluteFilePath(QString("%1.srt").arg(documentId));
+    }
+    return path;
+}
+
+void KdenliveDoc::initializeSubtitles(std::shared_ptr<SubtitleModel> m_subtitle)
+{
+    m_subtitleModel = m_subtitle;
+}
+

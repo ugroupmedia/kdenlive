@@ -11,17 +11,24 @@ Item {
     property string framenum
     property rect framesize
     property rect adjustedFrame
-    property point profile
+    property point profile: controller.profile
+    property int overlayType: controller.overlayType
+    property color overlayColor: 'cyan'
     property point center
     property double scalex
     property double scaley
+    // Zoombar properties
+    property double zoomStart: 0
+    property double zoomFactor: 1
+    property int zoomOffset: 0
+    property bool showZoomBar: false
     property double offsetx : 0
     property double offsety : 0
     property double lockratio : -1
     property double timeScale: 1
     property double frameSize: 10
     property int duration: 300
-    property real baseUnit: fontMetrics.font.pointSize
+    property real baseUnit: fontMetrics.font.pixelSize * 0.8
     property int mouseRulerPos: 0
     onScalexChanged: canvas.requestPaint()
     onScaleyChanged: canvas.requestPaint()
@@ -152,6 +159,26 @@ Item {
         y: root.center.y - height / 2 - root.offsety;
         color: "transparent"
         border.color: "#ffffff00"
+        Loader {
+            anchors.fill: parent
+            source: {
+                switch(root.overlayType)
+                {
+                    case 0:
+                        return '';
+                    case 1:
+                        return "OverlayStandard.qml";
+                    case 2:
+                        return "OverlayMinimal.qml";
+                    case 3:
+                        return "OverlayCenter.qml";
+                    case 4:
+                        return "OverlayCenterDiagonal.qml";
+                    case 5:
+                        return "OverlayThirds.qml";
+                }
+            }
+        }
     }
     MouseArea {
         id: global
@@ -162,6 +189,9 @@ Item {
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         cursorShape: containsMouse ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onWheel: {
+            controller.seek(wheel.angleDelta.x + wheel.angleDelta.y, wheel.modifiers)
+        }
 
         readonly property bool containsMouse: {
               if (isMoving) {
@@ -226,10 +256,11 @@ Item {
             top: parent.top
             left: parent.left
             }
-            visible: root.iskeyframe
-            width: effectsize.height * 0.7
-            height: this.width
+            width: root.baseUnit
+            height: width
             color: "red"
+            visible: root.iskeyframe || controller.autoKeyframe
+            opacity: root.iskeyframe ? 1 : 0.4
             MouseArea {
               property int oldMouseX
               property int oldMouseY
@@ -249,6 +280,10 @@ Item {
                 }
               }
               onPressed: {
+                  if (root.iskeyframe == false && controller.autoKeyframe) {
+                    console.log('ADDREMOVE THAND PRESSED')
+                    controller.addRemoveKeyframe();
+                  }
                   oldMouseX = mouseX
                   oldMouseY = mouseY
                   effectsize.visible = true
@@ -303,10 +338,11 @@ Item {
             top: parent.top
             right: parent.right
             }
-            width: effectsize.height * 0.7
-            height: this.width
+            width: root.baseUnit
+            height: width
             color: "red"
-            visible: root.iskeyframe
+            visible: root.iskeyframe || controller.autoKeyframe
+            opacity: root.iskeyframe ? 1 : 0.4
             MouseArea {
               property int oldMouseX
               property int oldMouseY
@@ -326,6 +362,10 @@ Item {
                 }
               }
               onPressed: {
+                  if (root.iskeyframe == false && controller.autoKeyframe) {
+                      console.log('ADDREMOVE TRAND PRESSED')
+                    controller.addRemoveKeyframe();
+                  }
                   oldMouseX = mouseX
                   oldMouseY = mouseY
                   effectsize.visible = true
@@ -369,10 +409,11 @@ Item {
             bottom: parent.bottom
             left: parent.left
             }
-            width: effectsize.height * 0.7
-            height: this.width
+            width: root.baseUnit
+            height: width
             color: "red"
-            visible: root.iskeyframe
+            visible: root.iskeyframe || controller.autoKeyframe
+            opacity: root.iskeyframe ? 1 : 0.4
             MouseArea {
               property int oldMouseX
               property int oldMouseY
@@ -392,6 +433,10 @@ Item {
                 }
               }
               onPressed: {
+                  if (root.iskeyframe == false && controller.autoKeyframe) {
+                      console.log('ADDREMOVE BLAND PRESSED')
+                    controller.addRemoveKeyframe();
+                  }
                   oldMouseX = mouseX
                   oldMouseY = mouseY
                   effectsize.visible = true
@@ -435,10 +480,11 @@ Item {
             bottom: parent.bottom
             right: parent.right
             }
-            width: effectsize.height * 0.7
-            height: this.width
+            width: root.baseUnit
+            height: width
             color: "red"
-            visible: root.iskeyframe
+            visible: root.iskeyframe || controller.autoKeyframe
+            opacity: root.iskeyframe ? 1 : 0.4
             MouseArea {
               property int oldMouseX
               property int oldMouseY
@@ -458,6 +504,10 @@ Item {
                 }
               }
               onPressed: {
+                  if (root.iskeyframe == false && controller.autoKeyframe) {
+                      console.log('ADDREMOVE BRHAND PRESSED')
+                    controller.addRemoveKeyframe();
+                  }
                   oldMouseX = mouseX
                   oldMouseY = mouseY
                   effectsize.visible = true
@@ -517,11 +567,15 @@ Item {
               property int oldMouseX
               property int oldMouseY
               hoverEnabled: true
-              enabled: root.iskeyframe
-              cursorShape: root.iskeyframe ? Qt.SizeAllCursor : Qt.ArrowCursor
+              enabled: root.iskeyframe || controller.autoKeyframe
+              cursorShape: enabled ? Qt.SizeAllCursor : Qt.ArrowCursor
               onEntered: { framerect.hoverColor = '#ffff00'}
               onExited: { framerect.hoverColor = '#ffffff'}
               onPressed: {
+                  if (root.iskeyframe == false && controller.autoKeyframe) {
+                      console.log('ADDREMOVE CENTER PRESSED')
+                    controller.addRemoveKeyframe();
+                  }
                   oldMouseX = mouseX
                   oldMouseY = mouseY
                   effectpos.visible = true
@@ -548,6 +602,7 @@ Item {
     EffectToolBar {
         id: effectToolBar
         barContainsMouse: effectToolBar.rightSide ? global.mouseX >= x - 10 : global.mouseX < x + width + 10
+        showAutoKeyframe: true
         onBarContainsMouseChanged: {
             effectToolBar.opacity = 1
             effectToolBar.visible = effectToolBar.barContainsMouse

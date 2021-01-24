@@ -63,8 +63,7 @@ public:
     }
 };
 
-ProjectSettings::ProjectSettings(KdenliveDoc *doc, QMap<QString, QString> metadata, QStringList lumas, int videotracks, int audiotracks,
-                                 const QString & /*projectPath*/, bool readOnlyTracks, bool savedProject, QWidget *parent)
+ProjectSettings::ProjectSettings(KdenliveDoc *doc, QMap<QString, QString> metadata, QStringList lumas, int videotracks, int audiotracks, int audiochannels, const QString & /*projectPath*/, bool readOnlyTracks, bool savedProject, QWidget *parent)
     : QDialog(parent)
     , m_savedProject(savedProject)
     , m_lumas(std::move(lumas))
@@ -88,10 +87,25 @@ ProjectSettings::ProjectSettings(KdenliveDoc *doc, QMap<QString, QString> metada
     video_thumbs->setChecked(KdenliveSettings::videothumbnails());
     audio_tracks->setValue(audiotracks);
     video_tracks->setValue(videotracks);
+    if (audiochannels == 4) {
+        audio_channels->setCurrentIndex(1);
+    } else if (audiochannels == 6) {
+        audio_channels->setCurrentIndex(2);
+    }
     connect(generate_proxy, &QAbstractButton::toggled, proxy_minsize, &QWidget::setEnabled);
     connect(generate_imageproxy, &QAbstractButton::toggled, proxy_imageminsize, &QWidget::setEnabled);
     connect(generate_imageproxy, &QAbstractButton::toggled, image_label, &QWidget::setEnabled);
     connect(generate_imageproxy, &QAbstractButton::toggled, proxy_imagesize, &QWidget::setEnabled);
+    connect(video_tracks, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, [this]() {
+        if (video_tracks->value() + audio_tracks->value() <= 0) {
+            video_tracks->setValue(1);
+        }
+    });
+    connect(audio_tracks, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, [this] () {
+        if (video_tracks->value() + audio_tracks->value() <= 0) {
+            audio_tracks->setValue(1);
+        }
+    });
 
     QString currentProf;
     if (doc) {
@@ -177,6 +191,7 @@ ProjectSettings::ProjectSettings(KdenliveDoc *doc, QMap<QString, QString> metada
     if (readOnlyTracks) {
         video_tracks->setEnabled(false);
         audio_tracks->setEnabled(false);
+        audio_channels->setEnabled(false);
     }
 
     metadata_list->setItemDelegateForColumn(0, new NoEditDelegate(this));
@@ -330,12 +345,12 @@ void ProjectSettings::slotUpdateFiles(bool cacheOnly)
     others->setExpanded(true);
     int count = 0;
     QStringList allFonts;
-    for (const QString &file : m_lumas) {
+    for (const QString &file : qAsConst(m_lumas)) {
         count++;
         new QTreeWidgetItem(images, QStringList() << file);
     }
     QList<std::shared_ptr<ProjectClip>> clipList = pCore->projectItemModel()->getRootFolder()->childClips();
-    for (const std::shared_ptr<ProjectClip> &clip : clipList) {
+    for (const std::shared_ptr<ProjectClip> &clip : qAsConst(clipList)) {
         switch (clip->clipType()) {
         case ClipType::Color:
             // ignore color clips in list, there is no real file
@@ -462,12 +477,21 @@ QUrl ProjectSettings::selectedFolder() const
     return project_folder->url();
 }
 
-QPoint ProjectSettings::tracks() const
+QPair<int, int> ProjectSettings::tracks() const
 {
-    QPoint p;
-    p.setX(video_tracks->value());
-    p.setY(audio_tracks->value());
-    return p;
+    return {video_tracks->value(), audio_tracks->value()};
+}
+
+int ProjectSettings::audioChannels() const
+{
+    switch (audio_channels->currentIndex()) {
+        case 1:
+            return 4;
+        case 2:
+            return 6;
+        default:
+            return 2;
+    }
 }
 
 bool ProjectSettings::enableVideoThumbs() const
@@ -566,7 +590,7 @@ QStringList ProjectSettings::extractPlaylistUrls(const QString &path)
     for (int i = 0; i < files.count(); ++i) {
         QDomElement e = files.at(i).toElement();
         QString type = Xml::getXmlProperty(e, QStringLiteral("mlt_service"));
-        if (type != QLatin1String("colour")) {
+        if (type != QLatin1String("colour") && type != QLatin1String("color")) {
             QString url = Xml::getXmlProperty(e, QStringLiteral("resource"));
             if (type == QLatin1String("timewarp")) {
                 url = Xml::getXmlProperty(e, QStringLiteral("warp_resource"));
@@ -642,10 +666,12 @@ QStringList ProjectSettings::extractSlideshowUrls(const QString &url)
 
 void ProjectSettings::slotExportToText()
 {
-    const QString savePath = QFileDialog::getSaveFileName(this, QString(), project_folder->url().toLocalFile(), QStringLiteral("text/plain"));
-    if (savePath.isEmpty()) {
-        return;
-    }
+    QFileDialog fd(this);
+    fd.setMimeTypeFilters(QStringList() << "text/plain");
+    if (fd.exec() != QDialog::Accepted) { return; }
+    
+    const QString savePath = fd.selectedFiles().constFirst();
+    
     QString text;
     text.append(i18n("Project folder: %1", project_folder->url().toLocalFile()) + '\n');
     text.append(i18n("Project profile: %1", m_pw->selectedProfile()) + '\n');
