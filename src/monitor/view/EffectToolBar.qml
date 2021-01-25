@@ -9,6 +9,7 @@ Rectangle {
     width: fullscreenButton.width
     property bool rightSide: true
     property bool barContainsMouse
+    property bool showAutoKeyframe: false
     height: childrenRect.height
     color: Qt.rgba(activePalette.window.r, activePalette.window.g, activePalette.window.b, 0.7)
     radius: 4
@@ -48,6 +49,19 @@ Rectangle {
             onClicked: controller.triggerAction('monitor_fullscreen')
         }
         ToolButton {
+            objectName: "switchOverlay"
+            iconName: "view-grid"
+            tooltip: i18n("Change Overlay")
+            onClicked: {
+                if (controller.overlayType >= 5) {
+                    controller.overlayType = 0
+                } else {
+                    controller.overlayType = controller.overlayType + 1;
+                }
+                root.overlayType = controller.overlayType
+            }
+        }
+        ToolButton {
             objectName: "nextKeyframe"
             iconName: "go-next"
             tooltip: "Go to Next Keyframe"
@@ -74,6 +88,14 @@ Rectangle {
             iconName: "zoom-out"
             tooltip: i18n("Zoom out")
             onClicked: controller.triggerAction('monitor_zoomout')
+        }
+        ToolButton {
+            iconName: "media-record"
+            tooltip: i18n("Automatic Keyframes")
+            onClicked: controller.switchAutoKeyframe()
+            checkable: true
+            checked: controller.autoKeyframe
+            visible: showAutoKeyframe
         }
         ToolButton {
             objectName: "moveBar"

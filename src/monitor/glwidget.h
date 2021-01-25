@@ -37,13 +37,14 @@
 #include "kdenlivesettings.h"
 #include "scopes/sharedframe.h"
 
+#include <mlt++/MltProfile.h>
+
 class QOpenGLFunctions_3_2_Core;
 
 namespace Mlt {
 class Filter;
 class Producer;
 class Consumer;
-class Profile;
 } // namespace Mlt
 
 class RenderThread;
@@ -85,10 +86,10 @@ public:
     // TODO: currently unused
     int reconfigureMulti(const QString &params, const QString &path, Mlt::Profile *profile);
     void stopCapture();
-    int reconfigure(bool reload = false);
+    int reconfigure();
     /** @brief Get the current MLT producer playlist.
      * @return A string describing the playlist */
-    const QString sceneList(const QString &root, const QString &fullPath = QString());
+    const QString sceneList(const QString &root, const QString &fullPath = QString(), QString filterData = QString());
 
     int displayWidth() const { return m_rect.width(); }
     void updateAudioForAnalysis();
@@ -106,13 +107,10 @@ public:
     QRect displayRect() const;
     /** @brief set to true if we want to emit a QImage of the frame for analysis */
     bool sendFrameForAnalysis;
-    void updateGamma();
     /** @brief delete and rebuild consumer, for example when external display is switched */
     void resetConsumer(bool fullReset);
-    void reloadProfile();
     void lockMonitor();
     void releaseMonitor();
-    int realTime() const;
     int droppedFrames() const;
     void resetDrops();
     bool checkFrameNumber(int pos, int offset, bool isPlaying);
@@ -123,14 +121,14 @@ public:
     void setRulerInfo(int duration, const std::shared_ptr<MarkerListModel> &model = nullptr);
     MonitorProxy *getControllerProxy();
     bool playZone(bool loop = false);
-    bool loopClip();
+    bool loopClip(QPoint inOut);
     void startConsumer();
     void stop();
     int rulerHeight() const;
     /** @brief return current play producer's playing speed */
     double playSpeed() const;
-    /** @brief Turn drop frame feature on/off */
-    void setDropFrames(bool drop);
+    /** @brief Purge and restart consumer */
+    void restart();
     /** @brief Returns current audio volume */
     int volume() const;
     /** @brief Set audio volume on consumer */
@@ -141,17 +139,18 @@ public:
     void setConsumerProperty(const QString &name, const QString &value);
     /** @brief Clear consumer cache */
     void purgeCache();
+    /** @brief Show / hide monitor ruler */
+    void switchRuler(bool show);
 
 protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
-    void wheelEvent(QWheelEvent *event) override;
     /** @brief Update producer, should ONLY be called from monitor */
-    int setProducer(const std::shared_ptr<Mlt::Producer> &producer, bool isActive, int position = -1);
+    int setProducer(const std::shared_ptr<Mlt::Producer> &producer, bool isActive, int position);
+    int setProducer(const QString &file);
     QString frameToTime(int frames) const;
 
 public slots:
-    //void seek(int pos);
     void requestSeek(int position);
     void setZoom(float zoom);
     void setOffsetX(int x, int max);
@@ -160,6 +159,9 @@ public slots:
     void initializeGL();
     void releaseAnalyse();
     void switchPlay(bool play, double speed = 1.0);
+    void reloadProfile();
+    /** @brief Update MLT's consumer scaling */
+    void updateScaling();
 
 signals:
     void frameDisplayed(const SharedFrame &frame);
@@ -182,7 +184,6 @@ signals:
     void lockMonitor(bool);
     void passKeyEvent(QKeyEvent *);
     void panView(const QPoint &diff);
-    void activateMonitor();
 
 protected:
     Mlt::Filter *m_glslManager;
@@ -192,7 +193,10 @@ protected:
     std::shared_ptr<Mlt::Consumer> m_consumer;
     std::shared_ptr<Mlt::Producer> m_producer;
     int m_id;
+    /** @brief The height of the qml ruler */
     int m_rulerHeight;
+    /** @brief The height of the qml ruler and audio thumbs */
+    int m_displayRulerHeight;
     QColor m_bgColor;
 
 private:
@@ -226,6 +230,7 @@ private:
     bool m_sendFrame;
     bool m_isZoneMode;
     bool m_isLoopMode;
+    int m_loopIn;
     QPoint m_offset;
     MonitorProxy *m_proxy;
     std::shared_ptr<Mlt::Producer> m_blackClip;
@@ -236,6 +241,8 @@ private:
     QOpenGLFramebufferObject *m_fbo;
     void refreshSceneLayout();
     void resetZoneMode();
+    /** @brief Restart consumer, keeping preview scaling settings */
+    bool restartConsumer();
 
     /* OpenGL context management. Interfaces to MLT according to the configured render pipeline.
      */
@@ -252,6 +259,8 @@ protected:
     SharedFrame m_sharedFrame;
     QOpenGLContext *m_shareContext;
 
+    /** @brief adjust monitor ruler size (for example if we want to display audio thumbs permanently) */
+    void updateRulerHeight(int addedHeight);
     bool acquireSharedFrameTextures();
     void bindShaderProgram();
     void createGPUAccelFragmentProg();

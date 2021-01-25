@@ -2,7 +2,7 @@
 find_package(LibV4L2)
 set_package_properties(LibV4L2 PROPERTIES
     DESCRIPTION "video4linux support libraries"
-    URL "http://freecode.com/projects/libv4l"
+    URL "https://linuxtv.org/downloads/v4l-utils/"
     TYPE RUNTIME
     PURPOSE "Required for better webcam support")
 
@@ -65,7 +65,7 @@ add_subdirectory(transitions)
 add_subdirectory(utils)
 add_subdirectory(widgets)
 add_subdirectory(xml)
-if(Qt5WebKitWidgets_FOUND)
+if(Qt5WebEngineWidgets_FOUND)
     add_subdirectory(qt-oauth-lib)
 endif()
 ## top_SRCS
@@ -85,7 +85,7 @@ ki18n_wrap_ui(kdenlive_UIS ${kdenlive_UIS})
 qt5_wrap_cpp(kdenlive_MOC definitions.h)
 set_property(SOURCE definitions.h PROPERTY SKIP_AUTOMOC ON)
 
-add_library(kdenliveLib STATIC ${kdenlive_SRCS} ${kdenlive_UIS} ${kdenlive_MOC})
+add_library(kdenliveLib STATIC ${kdenlive_SRCS} ${kdenlive_UIS} ${kdenlive_MOC} lib/localeHandling.cpp lib/localeHandling.h)
 
 qt5_add_resources(kdenlive_extra_SRCS icons.qrc ui/resources.qrc uiresources.qrc)
 ## Icon for Windows and OSX
@@ -94,7 +94,9 @@ ecm_add_app_icon(kdenlive ICONS ${ICONS_SRCS}) # icon name = variable name
 add_executable(kdenlive main.cpp ${kdenlive_extra_SRCS} ${kdenlive})
 target_include_directories(kdenlive
     PRIVATE ${CMAKE_BINARY_DIR}
-    SYSTEM ${MLT_INCLUDE_DIR} ${MLTPP_INCLUDE_DIR})
+    )
+target_include_directories(kdenlive
+	SYSTEM PRIVATE ${MLT_INCLUDE_DIR} ${MLTPP_INCLUDE_DIR})
 target_link_libraries(kdenlive kdenliveLib)
 install(TARGETS kdenlive DESTINATION ${BIN_INSTALL_DIR})
 
@@ -106,7 +108,9 @@ target_include_directories(kdenliveLib
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/lib/external
     ${CMAKE_CURRENT_SOURCE_DIR}/lib
-    SYSTEM ${MLT_INCLUDE_DIR} ${MLTPP_INCLUDE_DIR})
+    )
+target_include_directories(kdenliveLib
+	SYSTEM  PRIVATE ${MLT_INCLUDE_DIR} ${MLTPP_INCLUDE_DIR})
 # Adds Qt definitions and include directories, and sets QT_LIBRARIES according
 # to the components requested in find_package().
 # KDE definitions and include directories *must* always come first, Qt follows
@@ -131,6 +135,7 @@ target_link_libraries(kdenliveLib
     KF5::Solid
     Qt5::Svg
     Qt5::Quick
+    Qt5::QuickControls2
     Qt5::QuickWidgets
     Qt5::Concurrent
     Qt5::Multimedia
@@ -151,27 +156,12 @@ if(BUILD_COVERAGE)
   target_link_libraries(kdenliveLib gcov)
 endif()
 set_property(TARGET kdenliveLib PROPERTY CXX_STANDARD 14)
-SET(KDENLIVE_CXX_FLAGS  "${DEFAULT_CXX_FLAGS} -Wall -pedantic -Wextra")
-SET(KDENLIVE_CXX_FLAGS "${KDENLIVE_CXX_FLAGS} -Wcast-qual -Wcast-align -Wfloat-equal -Wpointer-arith")
-SET(KDENLIVE_CXX_FLAGS "${KDENLIVE_CXX_FLAGS} -Wunreachable-code -Wchar-subscripts -Wcomment -Wformat")
-SET(KDENLIVE_CXX_FLAGS "${KDENLIVE_CXX_FLAGS} -Wmain -Wmissing-braces")
-SET(KDENLIVE_CXX_FLAGS "${KDENLIVE_CXX_FLAGS} -Wparentheses -Wsequence-point -Wreturn-type -Wswitch")
-SET(KDENLIVE_CXX_FLAGS "${KDENLIVE_CXX_FLAGS} -Wuninitialized -Wreorder -Wundef -Wshadow -Wwrite-strings")
-SET(KDENLIVE_CXX_FLAGS "${KDENLIVE_CXX_FLAGS} -Wmissing-noreturn -Wsign-compare -Wsign-conversion -Wunused")
-SET(KDENLIVE_CXX_FLAGS "${KDENLIVE_CXX_FLAGS} -Wstrict-aliasing -Wconversion -Wdisabled-optimization -Wno-undef")
-SET(KDENLIVE_CXX_FLAGS "${KDENLIVE_CXX_FLAGS} -Wunused-parameter -Wshadow -Wno-variadic-macros -Wno-float-conversion")
-if(KDENLIVE_COMPILER_IS_GNUCXX)
-    SET(KDENLIVE_CXX_FLAGS "${KDENLIVE_CXX_FLAGS} -Wlogical-op -Wunsafe-loop-optimizations ")
-endif()
-set_target_properties(kdenliveLib PROPERTIES COMPILE_FLAGS "${KDENLIVE_CXX_FLAGS}")
 add_definitions(${qt5gui_definitions} -DQT_STRICT_ITERATORS -DQT_NO_CAST_FROM_BYTEARRAY)
-# To compile kiss_fft.
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --std=c99")
 
 # Optional deps
 if(DRMINGW_FOUND)
     target_compile_definitions(kdenlive PRIVATE -DUSE_DRMINGW)
-	target_include_directories(kdenlive PRIVATE SYSTEM ${DRMINGW_INCLUDE_DIR})
+    target_include_directories(kdenlive SYSTEM PRIVATE ${DRMINGW_INCLUDE_DIR})
     target_link_libraries(kdenlive ${DRMINGW_LIBRARY})
 elseif(KF5Crash_FOUND)
     target_compile_definitions(kdenlive PRIVATE -DKF5_USE_CRASH)
@@ -188,16 +178,16 @@ if(KF5_PURPOSE)
     target_link_libraries(kdenliveLib KF5::Purpose KF5::PurposeWidgets)
 endif()
 
-if(Qt5WebKitWidgets_FOUND)
-    message(STATUS "Found Qt5 WebKitWidgets. You can use your Freesound.org credentials to download files")
-    target_compile_definitions(kdenliveLib PRIVATE -DQT5_USE_WEBKIT)
-    target_link_libraries(kdenliveLib Qt5::WebKitWidgets)
+if(Qt5WebEngineWidgets_FOUND)
+    message(STATUS "Found Qt5 WebEngineWidgets. You can use your Freesound.org credentials to download files")
+    target_compile_definitions(kdenliveLib PRIVATE -DQT5_USE_WEBENGINE)
+    target_link_libraries(kdenliveLib Qt5::WebEngineWidgets)
 else()
-    message(STATUS "Qt5 WebKitWidgets not found. You cannot use your Freesound.org credentials, only preview files can be downloaded from the Online Resources Widget")
+    message(STATUS "Qt5 WebEngineWidgets not found. You cannot use your Freesound.org credentials, only preview files can be downloaded from the Online Resources Widget")
 endif()
 
 if(Q_WS_X11)
-    target_include_directories(kdenliveLib PRIVATE SYSTEM ${X11_Xlib_INCLUDE_PATH})
+	target_include_directories(kdenliveLib SYSTEM PRIVATE ${X11_Xlib_INCLUDE_PATH})
     target_link_libraries(kdenliveLib ${X11_LIBRARIES})
 endif()
 
@@ -208,7 +198,7 @@ elseif(SDL_FOUND)
 endif()
 
 if(LIBV4L2_FOUND)
-    target_include_directories(kdenliveLib PRIVATE SYSTEM ${LIBV4L2_INCLUDE_DIR})
+    target_include_directories(kdenliveLib SYSTEM PRIVATE ${LIBV4L2_INCLUDE_DIR})
     target_link_libraries(kdenliveLib ${LIBV4L2_LIBRARY})
     target_compile_definitions(kdenliveLib PRIVATE -DUSE_V4L)
 endif()

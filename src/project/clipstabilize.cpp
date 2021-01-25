@@ -50,7 +50,7 @@ ClipStabilize::ClipStabilize(const std::vector<QString> &binIds, QString filterN
     // setStyleSheet(stylesheet);
 
     Q_ASSERT(binIds.size() > 0);
-    auto firstBinClip = pCore->projectItemModel()->getClipByBinID(m_binIds.front());
+    auto firstBinClip = pCore->projectItemModel()->getClipByBinID(m_binIds.front().section(QLatin1Char('/'), 0, 0));
     auto firstUrl = firstBinClip->url();
     if (m_binIds.size() == 1) {
         QString newFile = firstUrl;
@@ -100,15 +100,9 @@ std::unordered_map<QString, QString> ClipStabilize::filterParams() const
 {
     QVector<QPair<QString, QVariant>> result = m_assetModel->getAllParameters();
     std::unordered_map<QString, QString> params;
-    QLocale locale;
-    locale.setNumberOptions(QLocale::OmitGroupSeparator);
 
-    for (const auto &it : result) {
-        if (it.second.type() == QVariant::Double) {
-            params[it.first] = locale.toString(it.second.toDouble());
-        } else {
-            params[it.first] = it.second.toString();
-        }
+    for (const auto &it : qAsConst(result)) {
+        params[it.first] = it.second.toString();
     }
     return params;
 }
@@ -150,7 +144,7 @@ void ClipStabilize::slotValidate()
         QDir folder(dest_url->url().toLocalFile());
         QStringList existingFiles;
         for (const QString &binId : m_binIds) {
-            auto binClip = pCore->projectItemModel()->getClipByBinID(binId);
+            auto binClip = pCore->projectItemModel()->getClipByBinID(binId.section(QLatin1Char('/'), 0, 0));
             auto url = binClip->url();
             if (folder.exists(url + QStringLiteral(".mlt"))) {
                 existingFiles.append(folder.absoluteFilePath(url + QStringLiteral(".mlt")));

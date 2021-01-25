@@ -27,7 +27,7 @@
 #include "scopes/sharedframe.h"
 #include "timecodedisplay.h"
 
-#include <QElapsedTimer>
+#include <QTimer>
 #include <QToolBar>
 
 #include <memory>
@@ -37,12 +37,14 @@ class SnapModel;
 class ProjectClip;
 class MonitorManager;
 class QSlider;
+class QToolButton;
 class KDualAction;
 class KSelectAction;
 class KMessageWidget;
 class QScrollBar;
 class RecManager;
 class QmlManager;
+class QLabel;
 class GLWidget;
 class MonitorAudioLevel;
 class MonitorProxy;
@@ -92,7 +94,7 @@ public:
     void resetConsumer(bool fullReset);
     void setCustomProfile(const QString &profile, const Timecode &tc);
     void setupMenu(QMenu *goMenu, QMenu *overlayMenu, QAction *playZone, QAction *loopZone, QMenu *markerMenu = nullptr, QAction *loopClip = nullptr);
-    const QString sceneList(const QString &root, const QString &fullPath = QString());
+    const QString sceneList(const QString &root, const QString &fullPath = QString(), const QString overlayData = QString());
     const QString activeClipId();
     int position();
     void updateTimecodeFormat();
@@ -104,16 +106,13 @@ public:
     void reloadProducer(const QString &id);
     /** @brief Reimplemented from QWidget, updates the palette colors. */
     void setPalette(const QPalette &p);
-    /** @brief Returns a hh:mm:ss timecode from a frame number. */
-    QString getTimecodeFromFrames(int pos);
     /** @brief Returns current project's fps. */
     double fps() const;
-    /** @brief Returns current project's timecode. */
-    Timecode timecode() const;
     /** @brief Get url for the clip's thumbnail */
     QString getMarkerThumb(GenTime pos);
     int getZoneStart();
     int getZoneEnd();
+    QPoint getZoneInfo() const;
     void setUpEffectGeometry(const QRect &r, const QVariantList &list = QVariantList(), const QVariantList &types = QVariantList());
     /** @brief Set a property on the effect scene */
     void setEffectSceneProperty(const QString &name, const QVariant &value);
@@ -126,8 +125,7 @@ public:
     void sendFrameForAnalysis(bool analyse);
     void updateAudioForAnalysis();
     void switchMonitorInfo(int code);
-    void switchDropFrames(bool drop);
-    void updateMonitorGamma();
+    void restart();
     void mute(bool, bool updateIconOnly = false) override;
     /** @brief Returns the action displaying record toolbar */
     QAction *recAction();
@@ -156,6 +154,18 @@ public:
     void resetPlayOrLoopZone(const QString &binId);
     /** @brief Returns a pointer to monitor proxy, allowing to manage seek and consumer position */
     MonitorProxy *getControllerProxy();
+    /** @brief Update active track in multitrack view */
+    void updateMultiTrackView(int tid);
+    /** @brief Returns true if monitor is currently fullscreen */
+    bool monitorIsFullScreen() const;
+    void reloadActiveStream();
+    /** @brief Trigger a refresh of audio thumbs colors */
+    void refreshAudioThumbs();
+    /** @brief Trigger a refresh of audio thumbs on notrmalization change */
+    void normalizeAudioThumbs();
+    /** @brief Returns true if monitor is playing */
+    bool isPlaying() const;
+    
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -207,6 +217,9 @@ private:
     QMenu *m_configMenu;
     QMenu *m_playMenu;
     QMenu *m_markerMenu;
+    QMenu *m_audioChannels;
+    QToolButton *m_streamsButton;
+    QAction *m_streamAction;
     QPoint m_DragStartPosition;
     /** true if selected clip is transition, false = selected clip is clip.
      *  Necessary because sometimes we get two signals, e.g. we get a clip and we get selected transition = nullptr. */
@@ -220,22 +233,23 @@ private:
     int m_offset;
     MonitorSceneType m_lastMonitorSceneType;
     MonitorAudioLevel *m_audioMeterWidget;
-    QElapsedTimer m_droppedTimer;
+    QTimer m_droppedTimer;
     double m_displayedFps;
+    QLabel *m_speedLabel;
+    int m_speedIndex;
 
     void adjustScrollBars(float horizontal, float vertical);
-    void loadQmlScene(MonitorSceneType type);
+    void loadQmlScene(MonitorSceneType type, QVariant sceneData = QVariant());
     void updateQmlDisplay(int currentOverlay);
-    /** @brief Check and display dropped frames */
-    void checkDrops(int dropped);
     /** @brief Create temporary Mlt::Tractor holding a clip and it's effectless clone */
     void buildSplitEffect(Mlt::Producer *original);
+    /** @brief Reset and hide speed info label */
+    void resetSpeedInfo();
 
 private slots:
     void slotSetThumbFrame();
-    void slotSaveZone();
     void slotSeek();
-    void updateClipZone();
+    void updateClipZone(const QPoint zone);
     void slotGoToMarker(QAction *action);
     void slotSetVolume(int volume);
     void slotEditMarker();
@@ -262,13 +276,13 @@ private slots:
     void setOffsetY(int y);
     /** @brief Pan monitor view */
     void panView(QPoint diff);
-    /** @brief Project monitor zone changed, inform timeline */
-    void updateTimelineClipZone();
     void slotSeekPosition(int);
     void addSnapPoint(int pos);
     void removeSnapPoint(int pos);
-    /** @brief Pause monitor and process seek */
+    /** @brief Process seek and optionally pause monitor */
     void processSeek(int pos);
+    /** @brief Check and display dropped frames */
+    void checkDrops();
 
 public slots:
     void slotSetScreen(int screenIndex);
@@ -282,20 +296,21 @@ public slots:
     void stop() override;
     void start() override;
     void switchPlay(bool play);
+    void updatePlayAction(bool play);
     void slotPlay() override;
     void pause();
     void slotPlayZone();
     void slotLoopZone();
     /** @brief Loops the selected item (clip or transition). */
-    void slotLoopClip();
-    void slotForward(double speed = 0);
-    void slotRewind(double speed = 0);
+    void slotLoopClip(QPoint inOut);
+    void slotForward(double speed = 0, bool allowNormalPlay = false) override;
+    void slotRewind(double speed = 0) override;
     void slotRewindOneFrame(int diff = 1);
     void slotForwardOneFrame(int diff = 1);
     void slotStart();
     void slotEnd();
     void slotSetZoneStart();
-    void slotSetZoneEnd(bool discardLastFrame = false);
+    void slotSetZoneEnd();
     void slotZoneStart();
     void slotZoneEnd();
     void slotLoadClipZone(const QPoint &zone);
@@ -303,9 +318,8 @@ public slots:
     void slotSeekToPreviousSnap();
     void adjustRulerSize(int length, const std::shared_ptr<MarkerListModel> &markerModel = nullptr);
     void setTimePos(const QString &pos);
-    QPoint getZoneInfo() const;
     /** @brief Display the on monitor effect scene (to adjust geometry over monitor). */
-    void slotShowEffectScene(MonitorSceneType sceneType, bool temporary = false);
+    void slotShowEffectScene(MonitorSceneType sceneType, bool temporary = false, QVariant sceneData = QVariant());
     bool effectSceneDisplayed(MonitorSceneType effectType);
     /** @brief split screen to compare clip with and without effect */
     void slotSwitchCompare(bool enable);
@@ -333,7 +347,7 @@ signals:
     void durationChanged(int);
     void refreshClipThumbnail(const QString &);
     void zoneUpdated(const QPoint &);
-    void timelineZoneChanged();
+    void zoneUpdatedWithUndo(const QPoint &, const QPoint &);
     /** @brief  Editing transitions / effects over the monitor requires the renderer to send frames as QImage.
      *      This causes a major slowdown, so we only enable it if required */
     void requestFrameForAnalysis(bool);
@@ -360,6 +374,8 @@ signals:
     void removeSplitOverlay();
     void acceptRipple(bool);
     void switchTrimMode(int);
+    void activateTrack(int);
+    void autoKeyframeChanged();
 };
 
 #endif

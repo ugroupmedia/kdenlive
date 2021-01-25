@@ -36,6 +36,17 @@ class TimelineModel;
 class ClipModel;
 class CompositionModel;
 class EffectStackModel;
+class AssetParameterModel;
+
+class MixInfo
+{
+public:
+    int firstClipId;
+    int secondClipId;
+    std::pair<int, int> firstClipInOut;
+    std::pair<int, int> secondClipInOut;
+    std::pair<int, int> mixInOut;
+};
 
 /* @brief This class represents a Track object, as viewed by the backend.
    To allow same track transitions, a Track object corresponds to two Mlt::Playlist, between which we can switch when required by the transitions.
@@ -109,6 +120,31 @@ public:
     // TODO make protected
     QVariant getProperty(const QString &name) const;
     void setProperty(const QString &name, const QString &value);
+    /** @brief Remove a composition between 2 same track clips */
+    bool requestRemoveMix(std::pair<int, int> clipIds, Fun &undo, Fun &redo);
+    /** @brief Create a composition between 2 same track clips */
+    bool requestClipMix(std::pair<int, int> clipIds, int mixDuration, bool updateView, bool finalMove, Fun &undo, Fun &redo, bool groupMove);
+    /** @brief Get clip ids and in/out position for mixes in this clip */
+    std::pair<MixInfo, MixInfo> getMixInfo(int cid) const;
+    /** @brief Delete a mix composition */
+    bool deleteMix(int clipId, bool final, bool notify = true);
+    /** @brief Create a mix composition using clip ids */
+    bool createMix(std::pair<int, int> clipIds, std::pair<int, int> mixData);
+    /** @brief Create a mix composition using mix info */
+    bool createMix(MixInfo info, bool isAudio);
+    /** @brief Change id of first clip in a mix (in case of clip cut) */
+    bool reAssignEndMix(int currentId, int newId);
+    void switchMix(int cid, const QString composition, Fun &undo, Fun &redo);
+    /** @brief Ensure we don't have unsynced mixes in the playlist (mixes without owner clip) */
+    void syncronizeMixes(bool finalMove);
+    /** @brief Switch a clip from one playlist to the other */
+    bool switchPlaylist(int clipId, int position, int sourcePlaylist, int destPlaylist);
+    /** @brief Load a same track transition from project */
+    bool loadMix(Mlt::Transition *t);
+    /** @brief Set mix duration and mix cut pos on a clip */
+    void setMixDuration(int cid, int mixDuration, int mixCut);
+    /** @brief Get the assetparameter model for a mix */
+    const std::shared_ptr<AssetParameterModel> mixModel(int cid);
 
 protected:
     /* @brief This will lock the track: it will no longer allow insertion/deletion/resize of items
@@ -119,14 +155,14 @@ protected:
     void unlock();
 
     /* @brief Returns a lambda that performs a resize of the given clip.
-       The lamda returns true if the operation succeeded, and otherwise nothing is modified
+       The lambda returns true if the operation succeeded, and otherwise nothing is modified
        This method is protected because it shouldn't be called directly. Call the function in the timeline instead.
        @param clipId is the id of the clip
        @param in is the new starting on the clip
        @param out is the new ending on the clip
        @param right is true if we change the right side of the clip, false otherwise
     */
-    Fun requestClipResize_lambda(int clipId, int in, int out, bool right);
+    Fun requestClipResize_lambda(int clipId, int in, int out, bool right, bool hasMix = false);
 
     /* @brief Performs an insertion of the given clip.
        Returns true if the operation succeeded, and otherwise, the track is not modified.
@@ -151,11 +187,11 @@ protected:
        @param undo Lambda function containing the current undo stack. Will be updated with current operation
        @param redo Lambda function containing the current redo queue. Will be updated with current operation
        @param groupMove If true, this is part of a larger operation and some operations like checking track duration will not be performed and have to be performed separately
-       @param finalDeletion If true, the clip will be deselected (should be false if this is a clip move doing delte/insert)
+       @param finalDeletion If true, the clip will be deselected (should be false if this is a clip move doing delete/insert)
     */
     bool requestClipDeletion(int clipId, bool updateView, bool finalMove, Fun &undo, Fun &redo, bool groupMove, bool finalDeletion);
     /* @brief This function returns a lambda that performs the requested operation */
-    Fun requestClipDeletion_lambda(int clipId, bool updateView, bool finalMove, bool groupMove);
+    Fun requestClipDeletion_lambda(int clipId, bool updateView, bool finalMove, bool groupMove, bool finalDeletion);
 
     /* @brief Performs an insertion of the given composition.
        Returns true if the operation succeeded, and otherwise, the track is not modified.
@@ -182,6 +218,8 @@ protected:
     int getBlankSizeNearClip(int clipId, bool after);
     int getBlankSizeNearComposition(int compoId, bool after);
     int getBlankStart(int position);
+    /* @brief Returns the start of the blank on a specific playlist */
+    int getBlankStart(int position, int track);
     int getBlankSizeAtPos(int frame);
     /* @brief Returns true if clip at position is the last on playlist
      * @param position the position in playlist
@@ -223,11 +261,11 @@ protected:
 
     /* @brief This is an helper function that returns the sub-playlist in which the clip is inserted, along with its index in the playlist
      @param position the position of the target clip*/
-    std::pair<int, int> getClipIndexAt(int position);
+    std::pair<int, int> getClipIndexAt(int position, int playlist = -1);
     QSharedPointer<Mlt::Producer> getClipProducer(int clipId);
 
     /* @brief This is an helper function that checks in all playlists if the given position is a blank */
-    bool isBlankAt(int position);
+    bool isBlankAt(int position, int playlist = -1);
 
     /* @brief This is an helper function that returns the end of the blank that covers given position */
     int getBlankEnd(int position);
@@ -235,7 +273,9 @@ protected:
     int getBlankEnd(int position, int track);
 
     /* @brief Returns the clip id on this track at position requested, or -1 if no clip */
-    int getClipByPosition(int position);
+    int getClipByPosition(int position, int playlist = -1);
+    /* @brief Returns the clip id on this track that starts at position requested, or -1 if no clip */
+    int getClipByStartPosition(int position) const;
 
     /* @brief Returns the composition id on this track starting position requested, or -1 if not found */
     int getCompositionByPosition(int position);
@@ -254,6 +294,8 @@ protected:
     /* @brief This function removes the clip from the mlt object, and then insert it back in the same spot again.
      * This is used when some properties of the clip have changed, and we need this to refresh it */
     void replugClip(int clipId);
+    void temporaryReplugClip(int cid);
+    void temporaryUnplugClip(int clipId);
 
     int trackDuration() const;
 
@@ -264,10 +306,18 @@ protected:
 
     /* @brief Import effects from a service that contains some (another track) */
     bool importEffects(std::weak_ptr<Mlt::Service> service);
-    /* @brief Copy effects from anoter effect stack */
+    /* @brief Copy effects from another effect stack */
     bool copyEffect(const std::shared_ptr<EffectStackModel> &stackModel, int rowId);
-    
-    bool isAvailable(int position, int duration);
+    /* @brief Returns true if we have a blank at position for duration */
+    bool isAvailable(int position, int duration, int playlist);
+    /* @brief Returns the number of same track transitions (mix) in this track */
+    int mixCount() const;
+    /** @brief Returns true if the track has a same track transition for this clip (cid) */
+    bool hasMix(int cid) const;
+    /** @brief Returns true if this clip has a mix at start */
+    bool hasStartMix(int cid) const;
+    /** @brief Returns true if this clip has a mix at end */
+    bool hasEndMix(int cid) const;
 
 public slots:
     /*Delete the current track and all its associated clips */
@@ -281,6 +331,8 @@ private:
     std::shared_ptr<Mlt::Tractor> m_track;
     std::shared_ptr<Mlt::Producer> m_mainPlaylist;
     Mlt::Playlist m_playlists[2];
+    // A list of clips having a same track transition, in the form: {first_clip_id, second_clip_id} where first_clip is placed before second_clip
+    QMap <int, int> m_mixList;
 
     std::map<int, std::shared_ptr<ClipModel>> m_allClips; /*this is important to keep an
                                                                             ordered structure to store the clips, since we use their ids order as row order*/
@@ -295,6 +347,8 @@ private:
 
 protected:
     std::shared_ptr<EffectStackModel> m_effectStack;
+    // A list of same track transitions for this track, in the form: {second_clip_id, transition}
+    std::unordered_map<int, std::shared_ptr<AssetParameterModel>> m_sameCompositions;
 };
 
 #endif

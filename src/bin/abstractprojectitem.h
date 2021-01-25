@@ -123,6 +123,10 @@ public:
         ItemTypeRole,
         // Duration of the clip as displayabe string
         DataDuration,
+        // Tag of the clip as colors
+        DataTag,
+        // Rating of the clip (0-5)
+        DataRating,
         // Duration of the clip in frames
         ParentDuration,
         // Inpoint of the subclip (0 for clips)
@@ -142,10 +146,8 @@ public:
         ClipHasAudioAndVideo
     };
 
-    enum CLIPSTATUS { StatusReady = 0, StatusMissing, StatusWaiting, StatusDeleting };
-
-    void setClipStatus(AbstractProjectItem::CLIPSTATUS status);
-    AbstractProjectItem::CLIPSTATUS clipStatus() const;
+    virtual void setClipStatus(FileStatus::ClipStatus status);
+    FileStatus::ClipStatus clipStatus() const;
     bool statusReady() const;
 
     /** @brief Returns the data that describes this item.
@@ -195,6 +197,10 @@ public:
     */
     virtual bool isIncludedInTimeline() { return false; }
     virtual ClipType::ProducerType clipType() const = 0;
+    uint rating() const;
+    virtual void setRating(uint rating);
+    const QString &tags() const;
+    void setTags(const QString tags);
 
 signals:
     void childAdded(AbstractProjectItem *child);
@@ -211,7 +217,9 @@ protected:
     QDateTime m_date;
     QString m_binId;
     uint m_usage;
-    CLIPSTATUS m_clipStatus;
+    uint m_rating;
+    QString m_tags;
+    FileStatus::ClipStatus m_clipStatus;
 
     PROJECTITEMTYPE m_itemType;
 

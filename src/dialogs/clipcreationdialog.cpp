@@ -60,7 +60,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 QStringList ClipCreationDialog::getExtensions()
 {
     // Build list of MIME types
-    QStringList mimeTypes = QStringList() << QStringLiteral("") << QStringLiteral("application/x-kdenlivetitle") << QStringLiteral("video/mlt-playlist")
+    QStringList mimeTypes = QStringList() << QLatin1String("") << QStringLiteral("application/x-kdenlivetitle") << QStringLiteral("video/mlt-playlist")
                                           << QStringLiteral("text/plain") << QStringLiteral("application/x-kdenlive");
 
     // Video MIMEs
@@ -83,14 +83,18 @@ QStringList ClipCreationDialog::getExtensions()
 
     QMimeDatabase db;
     QStringList allExtensions;
-    for (const QString &mimeType : mimeTypes) {
+    for (const QString &mimeType : qAsConst(mimeTypes)) {
         QMimeType mime = db.mimeTypeForName(mimeType);
         if (mime.isValid()) {
             allExtensions.append(mime.globPatterns());
         }
     }
     // process custom user extensions
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     const QStringList customs = KdenliveSettings::addedExtensions().split(' ', QString::SkipEmptyParts);
+#else
+    const QStringList customs = KdenliveSettings::addedExtensions().split(' ', Qt::SkipEmptyParts);
+#endif
     if (!customs.isEmpty()) {
         for (const QString &ext : customs) {
             if (ext.startsWith(QLatin1String("*."))) {
@@ -109,6 +113,17 @@ QStringList ClipCreationDialog::getExtensions()
     return allExtensions;
 }
 
+QString ClipCreationDialog::getExtensionsFilter(const QStringList& additionalFilters)
+{
+    const QString allExtensions = ClipCreationDialog::getExtensions().join(QLatin1Char(' '));
+    QString filter = i18n("All Supported Files") + " (" + allExtensions + ')';
+    if (!additionalFilters.isEmpty()) {
+        filter += ";;";
+        filter.append(additionalFilters.join(";;"));
+    }
+    return filter;
+}
+
 // static
 void ClipCreationDialog::createColorClip(KdenliveDoc *doc, const QString &parentFolder, std::shared_ptr<ProjectItemModel> model)
 {
@@ -118,7 +133,7 @@ void ClipCreationDialog::createColorClip(KdenliveDoc *doc, const QString &parent
     dia->setWindowTitle(i18n("Color Clip"));
     dia_ui.clip_name->setText(i18n("Color Clip"));
 
-    QScopedPointer<TimecodeDisplay> t(new TimecodeDisplay(doc->timecode()));
+    QScopedPointer<TimecodeDisplay> t(new TimecodeDisplay(doc->timecode(), dia.get()));
     t->setValue(KdenliveSettings::color_duration());
     dia_ui.clip_durationBox->addWidget(t.data());
     dia_ui.clip_color->setColor(KdenliveSettings::colorclipcolor());
@@ -389,7 +404,7 @@ void ClipCreationDialog::createClipsCommand(KdenliveDoc *doc, const QString &par
             // Check for image sequence
             const QUrl &url = list.at(0);
             QString fileName = url.fileName().section(QLatin1Char('.'), 0, -2);
-            if (fileName.at(fileName.size() - 1).isDigit()) {
+            if (!fileName.isEmpty() && fileName.at(fileName.size() - 1).isDigit()) {
                 KFileItem item(url);
                 if (item.mimetype().startsWith(QLatin1String("image"))) {
                     // import as sequence if we found more than one image in the sequence

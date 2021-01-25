@@ -30,6 +30,7 @@
 #include "effects/effectstack/model/effectstackmodel.hpp"
 #include "project/projectmanager.h"
 #include "timeline2/model/clipmodel.hpp"
+#include "bin/model/subtitlemodel.hpp"
 #include "timeline2/model/compositionmodel.hpp"
 #include "timeline2/model/groupsmodel.hpp"
 #include "timeline2/model/timelinefunctions.hpp"
@@ -84,4 +85,4 @@ using namespace fakeit;
 
 QString createProducer(Mlt::Profile &prof, std::string color, std::shared_ptr<ProjectItemModel> binModel, int length = 20, bool limited = true);
 
-QString createProducerWithSound(Mlt::Profile &prof, std::shared_ptr<ProjectItemModel> binModel);
+QString createProducerWithSound(Mlt::Profile &prof, std::shared_ptr<ProjectItemModel> binModel, int length = 10);

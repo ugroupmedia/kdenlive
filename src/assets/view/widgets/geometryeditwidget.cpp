@@ -52,12 +52,17 @@ GeometryEditWidget::GeometryEditWidget(std::shared_ptr<AssetParameterModel> mode
     m_geom = new GeometryWidget(monitor, QPair<int, int>(start, end), rect, 100, frameSize, false,
                                 m_model->data(m_index, AssetParameterModel::OpacityRole).toBool(), true, this);
     m_geom->setSizePolicy(QSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Preferred));
+    connect(m_geom, &GeometryWidget::updateMonitorGeometry, [this](const QRect r) {
+        if (m_model->isActive()) {
+            pCore->getMonitor(m_model->monitorId)->setUpEffectGeometry(r);
+        }
+    });
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(m_geom);
     setFixedHeight(m_geom->sizeHint().height());
 
     // emit the signal of the base class when appropriate
-    connect(this->m_geom, &GeometryWidget::valueChanged, [this](const QString val) { emit valueChanged(m_index, val, true); });
+    connect(this->m_geom, &GeometryWidget::valueChanged, this, [this](const QString val) { emit valueChanged(m_index, val, true); });
 
     setToolTip(comment);
 }

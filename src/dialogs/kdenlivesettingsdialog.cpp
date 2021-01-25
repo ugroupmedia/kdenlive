@@ -23,10 +23,14 @@
 #include "dialogs/profilesdialog.h"
 #include "encodingprofilesdialog.h"
 #include "kdenlivesettings.h"
+#include "mainwindow.h"
+#include "timeline2/view/timelinewidget.h"
+#include "timeline2/view/timelinecontroller.h"
 #include "profiles/profilemodel.hpp"
 #include "profiles/profilerepository.hpp"
 #include "profilesdialog.h"
 #include "project/dialogs/profilewidget.h"
+#include "wizard.h"
 
 #ifdef USE_V4L
 #include "capture/v4lcapture.h"
@@ -66,7 +70,6 @@ KdenliveSettingsDialog::KdenliveSettingsDialog(QMap<QString, QString> mappable_a
 {
     KdenliveSettings::setV4l_format(0);
     QWidget *p1 = new QWidget;
-    QFontInfo ftInfo(font());
     m_configMisc.setupUi(p1);
     m_page1 = addPage(p1, i18n("Misc"));
     m_page1->setIcon(QIcon::fromTheme(QStringLiteral("configure")));
@@ -87,6 +90,16 @@ KdenliveSettingsDialog::KdenliveSettingsDialog(QMap<QString, QString> mappable_a
     m_page8->setIcon(QIcon::fromTheme(QStringLiteral("project-defaults")));
     m_configProject.projecturl->setMode(KFile::Directory);
     m_configProject.projecturl->setUrl(QUrl::fromLocalFile(KdenliveSettings::defaultprojectfolder()));
+    connect(m_configProject.kcfg_videotracks, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, [this]() {
+        if (m_configProject.kcfg_videotracks->value() + m_configProject.kcfg_audiotracks->value() <= 0) {
+            m_configProject.kcfg_videotracks->setValue(1);
+        }
+    });
+    connect(m_configProject.kcfg_audiotracks, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, [this] () {
+        if (m_configProject.kcfg_videotracks->value() + m_configProject.kcfg_audiotracks->value() <= 0) {
+            m_configProject.kcfg_audiotracks->setValue(1);
+        }
+    });
 
     QWidget *p9 = new QWidget;
     m_configProxy.setupUi(p9);
@@ -102,7 +115,6 @@ KdenliveSettingsDialog::KdenliveSettingsDialog(QMap<QString, QString> mappable_a
     m_configTimeline.setupUi(p3);
     m_page3 = addPage(p3, i18n("Timeline"));
     m_page3->setIcon(QIcon::fromTheme(QStringLiteral("video-display")));
-    m_configTimeline.kcfg_trackheight->setMinimum(ftInfo.pixelSize() * 1.5);
 
     QWidget *p2 = new QWidget;
     m_configEnv.setupUi(p2);
@@ -112,8 +124,6 @@ KdenliveSettingsDialog::KdenliveSettingsDialog(QMap<QString, QString> mappable_a
     m_configEnv.ffmpegurl->lineEdit()->setObjectName(QStringLiteral("kcfg_ffmpegpath"));
     m_configEnv.ffplayurl->lineEdit()->setObjectName(QStringLiteral("kcfg_ffplaypath"));
     m_configEnv.ffprobeurl->lineEdit()->setObjectName(QStringLiteral("kcfg_ffprobepath"));
-    int maxThreads = QThread::idealThreadCount();
-    m_configEnv.kcfg_mltthreads->setMaximum(maxThreads > 2 ? maxThreads : 8);
     m_configEnv.tmppathurl->setMode(KFile::Directory);
     m_configEnv.tmppathurl->lineEdit()->setObjectName(QStringLiteral("kcfg_currenttmpfolder"));
     m_configEnv.capturefolderurl->setMode(KFile::Directory);
@@ -124,8 +134,17 @@ KdenliveSettingsDialog::KdenliveSettingsDialog(QMap<QString, QString> mappable_a
     m_configEnv.libraryfolderurl->setMode(KFile::Directory);
     m_configEnv.libraryfolderurl->lineEdit()->setObjectName(QStringLiteral("kcfg_libraryfolder"));
     m_configEnv.libraryfolderurl->setEnabled(!KdenliveSettings::librarytodefaultfolder());
+    m_configEnv.libraryfolderurl->setPlaceholderText(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/library"));
     m_configEnv.kcfg_librarytodefaultfolder->setToolTip(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/library"));
     connect(m_configEnv.kcfg_librarytodefaultfolder, &QAbstractButton::clicked, this, &KdenliveSettingsDialog::slotEnableLibraryFolder);
+
+    // Script rendering folder
+    m_configEnv.videofolderurl->setMode(KFile::Directory);
+    m_configEnv.videofolderurl->lineEdit()->setObjectName(QStringLiteral("kcfg_videofolder"));
+    m_configEnv.videofolderurl->setEnabled(!KdenliveSettings::videotodefaultfolder());
+    m_configEnv.videofolderurl->setPlaceholderText(QStandardPaths::writableLocation(QStandardPaths::MoviesLocation));
+    m_configEnv.kcfg_videotodefaultfolder->setToolTip(QStandardPaths::writableLocation(QStandardPaths::MoviesLocation));
+    connect(m_configEnv.kcfg_videotodefaultfolder, &QAbstractButton::clicked, this, &KdenliveSettingsDialog::slotEnableVideoFolder);
 
     // Mime types
     QStringList mimes = ClipCreationDialog::getExtensions();
@@ -135,6 +154,11 @@ KdenliveSettingsDialog::KdenliveSettingsDialog(QMap<QString, QString> mappable_a
     m_page2 = addPage(p2, i18n("Environment"));
     m_page2->setIcon(QIcon::fromTheme(QStringLiteral("application-x-executable-script")));
 
+    QWidget *p10 = new QWidget;
+    m_configColors.setupUi(p10);
+    m_page10 = addPage(p10, i18n("Colors"));
+    m_page10->setIcon(QIcon::fromTheme(QStringLiteral("color-management")));
+    
     QWidget *p4 = new QWidget;
     m_configCapture.setupUi(p4);
     // Remove ffmpeg tab, unused
@@ -210,7 +234,7 @@ KdenliveSettingsDialog::KdenliveSettingsDialog(QMap<QString, QString> mappable_a
     m_configShuttle.kcfg_enableshuttle->setDisabled(true);
 #endif /* USE_JOGSHUTTLE */
     m_page5 = addPage(p5, i18n("JogShuttle"));
-    m_page5->setIcon(QIcon::fromTheme(QStringLiteral("jog-dial")));
+    m_page5->setIcon(QIcon::fromTheme(QStringLiteral("dialog-input-devices")));
 
     QWidget *p6 = new QWidget;
     m_configSdl.setupUi(p6);
@@ -425,7 +449,7 @@ bool KdenliveSettingsDialog::initAudioRecDevice()
     m_configCapture.labelNoAudioDevices->setVisible(audioDevices.empty());
 
     m_configCapture.kcfg_defaultaudiocapture->addItems(audioDevices);
-    connect(m_configCapture.kcfg_defaultaudiocapture, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), [&]() {
+    connect(m_configCapture.kcfg_defaultaudiocapture, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, [&]() {
         QString currentDevice = m_configCapture.kcfg_defaultaudiocapture->currentText();
         KdenliveSettings::setDefaultaudiocapture(currentDevice);
     });
@@ -543,7 +567,7 @@ void KdenliveSettingsDialog::setupJogshuttleBtns(const QString &device)
     // action_names, as the sorting may depend on the user-language.
     QStringList actions_map = JogShuttleConfig::actionMap(KdenliveSettings::shuttlebuttons());
     QMap<QString, int> action_pos;
-    for (const QString &action_id : actions_map) {
+    for (const QString &action_id : qAsConst(actions_map)) {
         // This loop find out at what index is the string that would map to the action_id.
         for (int i = 0; i < action_names.size(); ++i) {
             if (mappable_actions[action_names.at(i)] == action_id) {
@@ -554,7 +578,7 @@ void KdenliveSettingsDialog::setupJogshuttleBtns(const QString &device)
     }
 
     int i = 0;
-    for (QComboBox *button : m_shuttle_buttons) {
+    for (QComboBox *button : qAsConst(m_shuttle_buttons)) {
         button->addItems(action_names);
         connect(button, SIGNAL(activated(int)), this, SLOT(slotShuttleModified()));
         ++i;
@@ -584,15 +608,25 @@ void KdenliveSettingsDialog::slotEnableLibraryFolder()
     m_configEnv.libraryfolderurl->setEnabled(!m_configEnv.kcfg_librarytodefaultfolder->isChecked());
 }
 
+void KdenliveSettingsDialog::slotEnableVideoFolder()
+{
+    m_configEnv.videofolderurl->setEnabled(!m_configEnv.kcfg_videotodefaultfolder->isChecked());
+}
+
 void KdenliveSettingsDialog::initDevices()
 {
     // Fill audio drivers
     m_configSdl.kcfg_audio_driver->addItem(i18n("Automatic"), QString());
-#ifndef Q_WS_MAC
-    m_configSdl.kcfg_audio_driver->addItem(i18n("OSS"), "dsp");
+#if defined(Q_OS_WIN)
+    //TODO: i18n
+    m_configSdl.kcfg_audio_driver->addItem("DirectSound", "directsound");
+    m_configSdl.kcfg_audio_driver->addItem("WinMM", "winmm");
+    m_configSdl.kcfg_audio_driver->addItem("Wasapi", "wasapi");
+#elif !defined(Q_WS_MAC)
     m_configSdl.kcfg_audio_driver->addItem(i18n("ALSA"), "alsa");
-    m_configSdl.kcfg_audio_driver->addItem(i18n("PulseAudio"), "pulse");
-    m_configSdl.kcfg_audio_driver->addItem(i18n("OSS with DMA access"), "dma");
+    m_configSdl.kcfg_audio_driver->addItem(i18n("PulseAudio"), "pulseaudio");
+    m_configSdl.kcfg_audio_driver->addItem(i18n("OSS"), "dsp");
+    //m_configSdl.kcfg_audio_driver->addItem(i18n("OSS with DMA access"), "dma");
     m_configSdl.kcfg_audio_driver->addItem(i18n("Esound daemon"), "esd");
     m_configSdl.kcfg_audio_driver->addItem(i18n("ARTS daemon"), "artsc");
 #endif
@@ -666,7 +700,7 @@ void KdenliveSettingsDialog::initDevices()
         m_configSdl.kcfg_audio_backend->setCurrentIndex(ix);
         KdenliveSettings::setAudio_backend(ix);
     }
-    m_configSdl.group_sdl->setEnabled(KdenliveSettings::audiobackend().startsWith(QLatin1String("sdl_audio")));
+    m_configSdl.group_sdl->setEnabled(KdenliveSettings::audiobackend().startsWith(QLatin1String("sdl")));
 
     loadCurrentV4lProfileInfo();
 }
@@ -682,9 +716,9 @@ void KdenliveSettingsDialog::slotReadAudioDevices()
         if (!devicestr.startsWith(QLatin1Char(' ')) && devicestr.count(QLatin1Char(':')) > 1) {
             QString card = devicestr.section(QLatin1Char(':'), 0, 0).section(QLatin1Char(' '), -1);
             QString device = devicestr.section(QLatin1Char(':'), 1, 1).section(QLatin1Char(' '), -1);
-            m_configSdl.kcfg_audio_device->addItem(devicestr.section(QLatin1Char(':'), -1).simplified(), QStringLiteral("plughw:%1,%2").arg(card).arg(device));
+            m_configSdl.kcfg_audio_device->addItem(devicestr.section(QLatin1Char(':'), -1).simplified(), QStringLiteral("plughw:%1,%2").arg(card, device));
             m_configCapture.kcfg_v4l_alsadevice->addItem(devicestr.section(QLatin1Char(':'), -1).simplified(),
-                                                         QStringLiteral("hw:%1,%2").arg(card).arg(device));
+                                                         QStringLiteral("hw:%1,%2").arg(card, device));
         }
     }
 }
@@ -796,7 +830,7 @@ void KdenliveSettingsDialog::updateWidgets()
     std::sort(action_names.begin(), action_names.end());
     QStringList actions_map = JogShuttleConfig::actionMap(KdenliveSettings::shuttlebuttons());
     QMap<QString, int> action_pos;
-    for (const QString &action_id : actions_map) {
+    for (const QString &action_id : qAsConst(actions_map)) {
         // This loop find out at what index is the string that would map to the action_id.
         for (int i = 0; i < action_names.size(); ++i) {
             if (m_mappable_actions[action_names[i]] == action_id) {
@@ -806,7 +840,7 @@ void KdenliveSettingsDialog::updateWidgets()
         }
     }
     int i = 0;
-    for (QComboBox *button : m_shuttle_buttons) {
+    for (QComboBox *button : qAsConst(m_shuttle_buttons)) {
         ++i;
         if (i < actions_map.size()) {
             button->setCurrentIndex(action_pos[actions_map[i]]);
@@ -834,7 +868,30 @@ void KdenliveSettingsDialog::updateSettings()
     }
     KdenliveSettings::setDefault_profile(m_pw->selectedProfile());
 
-    bool resetProfile = false;
+    if (m_configEnv.ffmpegurl->text().isEmpty()) {
+        QString infos;
+        QString warnings;
+        Wizard::slotCheckPrograms(infos, warnings);
+        m_configEnv.ffmpegurl->setText(KdenliveSettings::ffmpegpath());
+        m_configEnv.ffplayurl->setText(KdenliveSettings::ffplaypath());
+        m_configEnv.ffprobeurl->setText(KdenliveSettings::ffprobepath());
+    }
+    
+    if (m_configTimeline.kcfg_trackheight->value() == 0) {
+        QFont ft = QFontDatabase::systemFont(QFontDatabase::SmallestReadableFont);
+        // Default unit for timeline.qml objects size
+        int baseUnit = qMax(28, (int) (QFontInfo(ft).pixelSize() * 1.8 + 0.5));
+        int trackHeight = qMax(50, (int) (2.2 * baseUnit + 6));
+        m_configTimeline.kcfg_trackheight->setValue(trackHeight);
+    } else if (m_configTimeline.kcfg_trackheight->value() != KdenliveSettings::trackheight()) {
+        QFont ft = QFontDatabase::systemFont(QFontDatabase::SmallestReadableFont);
+        // Default unit for timeline.qml objects size
+        int baseUnit = qMax(28, (int) (QFontInfo(ft).pixelSize() * 1.8 + 0.5));
+        if (m_configTimeline.kcfg_trackheight->value() < baseUnit) {
+            m_configTimeline.kcfg_trackheight->setValue(baseUnit);
+        }
+    }
+    
     bool resetConsumer = false;
     bool fullReset = false;
     bool updateCapturePath = false;
@@ -979,7 +1036,13 @@ void KdenliveSettingsDialog::updateSettings()
     if (m_configSdl.kcfg_window_background->color() != KdenliveSettings::window_background()) {
         KdenliveSettings::setWindow_background(m_configSdl.kcfg_window_background->color());
         emit updateMonitorBg();
-        resetProfile = true;
+    }
+    
+    if (m_configColors.kcfg_thumbColor1->color() != KdenliveSettings::thumbColor1() || m_configColors.kcfg_thumbColor2->color() != KdenliveSettings::thumbColor2()) {
+        KdenliveSettings::setThumbColor1(m_configColors.kcfg_thumbColor1->color());
+        KdenliveSettings::setThumbColor2(m_configColors.kcfg_thumbColor2->color());
+        emit pCore->window()->getMainTimeline()->controller()->colorsChanged();
+        emit pCore->getMonitor(Kdenlive::ClipMonitor)->refreshAudioThumbs();
     }
 
     if (m_configSdl.kcfg_volume->value() != KdenliveSettings::volume()) {
@@ -994,6 +1057,7 @@ void KdenliveSettingsDialog::updateSettings()
     if (m_configTimeline.kcfg_displayallchannels->isChecked() != KdenliveSettings::displayallchannels()) {
         KdenliveSettings::setDisplayallchannels(m_configTimeline.kcfg_displayallchannels->isChecked());
         emit audioThumbFormatChanged();
+        emit pCore->getMonitor(Kdenlive::ClipMonitor)->refreshAudioThumbs();
     }
 
     if (m_modified) {
@@ -1007,7 +1071,7 @@ void KdenliveSettingsDialog::updateSettings()
 
     QStringList actions;
     actions << QStringLiteral("monitor_pause"); // the Job rest position action.
-    for (QComboBox *button : m_shuttle_buttons) {
+    for (QComboBox *button : qAsConst(m_shuttle_buttons)) {
         actions << m_mappable_actions[button->currentText()];
     }
     QString maps = JogShuttleConfig::actionMap(actions);
@@ -1034,7 +1098,11 @@ void KdenliveSettingsDialog::updateSettings()
 
     if (m_configTimeline.kcfg_autoscroll->isChecked() != KdenliveSettings::autoscroll()) {
         KdenliveSettings::setAutoscroll(m_configTimeline.kcfg_autoscroll->isChecked());
-        pCore->autoScrollChanged();
+        emit pCore->autoScrollChanged();
+    }
+
+    if (m_configTimeline.kcfg_pauseonseek->isChecked() != KdenliveSettings::pauseonseek()) {
+        KdenliveSettings::setPauseonseek(m_configTimeline.kcfg_pauseonseek->isChecked());
     }
 
     // Mimes
@@ -1050,9 +1118,6 @@ void KdenliveSettingsDialog::updateSettings()
     // KConfigDialog::updateSettings();
     if (resetConsumer) {
         emit doResetConsumer(fullReset);
-    }
-    if (resetProfile) {
-        emit doResetProfile();
     }
     if (restart) {
         emit restartKdenlive();
@@ -1074,7 +1139,7 @@ void KdenliveSettingsDialog::slotCheckAlsaDriver()
 void KdenliveSettingsDialog::slotCheckAudioBackend()
 {
     QString value = m_configSdl.kcfg_audio_backend->itemData(m_configSdl.kcfg_audio_backend->currentIndex()).toString();
-    m_configSdl.group_sdl->setEnabled(value.startsWith(QLatin1String("sdl_audio")));
+    m_configSdl.group_sdl->setEnabled(value.startsWith(QLatin1String("sdl")));
 }
 
 void KdenliveSettingsDialog::loadTranscodeProfiles()
@@ -1214,7 +1279,7 @@ void KdenliveSettingsDialog::slotShuttleModified()
 #ifdef USE_JOGSHUTTLE
     QStringList actions;
     actions << QStringLiteral("monitor_pause"); // the Job rest position action.
-    for (QComboBox *button : m_shuttle_buttons) {
+    for (QComboBox *button : qAsConst(m_shuttle_buttons)) {
         actions << m_mappable_actions[button->currentText()];
     }
     QString maps = JogShuttleConfig::actionMap(actions);
@@ -1254,17 +1319,29 @@ void KdenliveSettingsDialog::slotUpdatev4lDevice()
         m_configCapture.kcfg_v4l_format->addItem(i18n("Current settings"));
     }
 
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     QStringList pixelformats = info.split('>', QString::SkipEmptyParts);
+#else
+    QStringList pixelformats = info.split('>', Qt::SkipEmptyParts);
+#endif
     QString itemSize;
     QString pixelFormat;
     QStringList itemRates;
     for (int i = 0; i < pixelformats.count(); ++i) {
         QString format = pixelformats.at(i).section(QLatin1Char(':'), 0, 0);
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
         QStringList sizes = pixelformats.at(i).split(':', QString::SkipEmptyParts);
+#else
+        QStringList sizes = pixelformats.at(i).split(':', Qt::SkipEmptyParts);
+#endif
         pixelFormat = sizes.takeFirst();
         for (int j = 0; j < sizes.count(); ++j) {
             itemSize = sizes.at(j).section(QLatin1Char('='), 0, 0);
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
             itemRates = sizes.at(j).section(QLatin1Char('='), 1, 1).split(QLatin1Char(','), QString::SkipEmptyParts);
+#else
+            itemRates = sizes.at(j).section(QLatin1Char('='), 1, 1).split(QLatin1Char(','), Qt::SkipEmptyParts);
+#endif
             for (int k = 0; k < itemRates.count(); ++k) {
                 m_configCapture.kcfg_v4l_format->addItem(
                     QLatin1Char('[') + format + QStringLiteral("] ") + itemSize + QStringLiteral(" (") + itemRates.at(k) + QLatin1Char(')'),

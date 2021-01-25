@@ -20,23 +20,17 @@ import QtQuick 2.11
 import QtQml.Models 2.11
 import com.enums 1.0
 
-Column{
+Item{
     id: trackRoot
     property alias trackModel: trackModel.model
     property alias rootIndex : trackModel.rootIndex
     property bool isAudio
     property real timeScale: 1.0
-    property bool isCurrentTrack: false
     property bool isLocked: false
     property int trackInternalId : -42
     property int trackThumbsFormat
     property int itemType: 0
     opacity: model.disabled ? 0.4 : 1
-
-    /*function redrawWaveforms() {
-        for (var i = 0; i < repeater.count; i++)
-            repeater.itemAt(i).generateWaveform()
-    }*/
 
     function clipAt(index) {
         return repeater.itemAt(index)
@@ -52,7 +46,8 @@ Column{
         id: trackModel
         delegate: Item {
             property var itemModel : model
-            z: model.clipType == ProducerType.Composition ? 5 : 0
+            property bool clipItem: isClip(model.clipType)
+            z: model.clipType == ProducerType.Composition ? 5 : model.mixDuration > 0 ? model.start / 25 : 0
             Loader {
                 id: loader
                 Binding {
@@ -65,13 +60,31 @@ Column{
                     target: loader.item
                     property: "fakeTid"
                     value: model.fakeTrackId
+                    when: loader.status == Loader.Ready && loader.item && clipItem
+                }
+                Binding {
+                    target: loader.item
+                    property: "tagColor"
+                    value: model.tag
                     when: loader.status == Loader.Ready && loader.item && isClip(model.clipType)
                 }
                 Binding {
                     target: loader.item
                     property: "fakePosition"
                     value: model.fakePosition
-                    when: loader.status == Loader.Ready && loader.item && isClip(model.clipType)
+                    when: loader.status == Loader.Ready && loader.item && clipItem
+                }
+                Binding {
+                    target: loader.item
+                    property: "mixDuration"
+                    value: model.mixDuration
+                    when: loader.status == Loader.Ready && loader.item && clipItem
+                }
+                Binding {
+                    target: loader.item
+                    property: "mixCut"
+                    value: model.mixCut
+                    when: loader.status == Loader.Ready && loader.item && clipItem
                 }
                 Binding {
                     target: loader.item
@@ -94,38 +107,38 @@ Column{
                 Binding {
                     target: loader.item
                     property: "scrollX"
-                    value: scrollView.flickableItem.contentX
+                    value: scrollView.contentX
                     when: loader.status == Loader.Ready && loader.item
                 }
                 Binding {
                     target: loader.item
                     property: "fadeIn"
                     value: model.fadeIn
-                    when: loader.status == Loader.Ready && isClip(model.clipType)
+                    when: loader.status == Loader.Ready && clipItem
                 }
                 Binding {
                     target: loader.item
                     property: "positionOffset"
                     value: model.positionOffset
-                    when: loader.status == Loader.Ready && isClip(model.clipType)
+                    when: loader.status == Loader.Ready && clipItem
                 }
                 Binding {
                     target: loader.item
                     property: "effectNames"
                     value: model.effectNames
-                    when: loader.status == Loader.Ready && isClip(model.clipType)
+                    when: loader.status == Loader.Ready && clipItem
                 }
                 Binding {
                     target: loader.item
                     property: "clipStatus"
                     value: model.clipStatus
-                    when: loader.status == Loader.Ready && isClip(model.clipType)
+                    when: loader.status == Loader.Ready && clipItem
                 }
                 Binding {
                     target: loader.item
                     property: "fadeOut"
                     value: model.fadeOut
-                    when: loader.status == Loader.Ready && isClip(model.clipType)
+                    when: loader.status == Loader.Ready && clipItem
                 }
                 Binding {
                     target: loader.item
@@ -191,34 +204,34 @@ Column{
                     target: loader.item
                     property: "clipResource"
                     value: model.resource
-                    when: loader.status == Loader.Ready && isClip(model.clipType)
+                    when: loader.status == Loader.Ready && clipItem
                 }
                 Binding {
                     target: loader.item
-                    property: "speed"
-                    value: model.speed
+                    property: "clipState"
+                    value: model.clipState
                     when: loader.status == Loader.Ready && isClip(model.clipType)
                 }
                 Binding {
                     target: loader.item
                     property: "maxDuration"
                     value: model.maxDuration
-                    when: loader.status == Loader.Ready && isClip(model.clipType)
+                    when: loader.status == Loader.Ready && clipItem
                 }
                 Binding {
                     target: loader.item
                     property: "forceReloadThumb"
                     value: model.reloadThumb
-                    when: loader.status == Loader.Ready && isClip(model.clipType)
+                    when: loader.status == Loader.Ready && clipItem
                 }
                 Binding {
                     target: loader.item
                     property: "binId"
                     value: model.binId
-                    when: loader.status == Loader.Ready && isClip(model.clipType)
+                    when: loader.status == Loader.Ready && clipItem
                 }
                 sourceComponent: {
-                    if (isClip(model.clipType)) {
+                    if (clipItem) {
                         return clipDelegate
                     } else if (model.clipType == ProducerType.Composition) {
                         return compositionDelegate
@@ -230,7 +243,7 @@ Column{
                 onLoaded: {
                     item.clipId= model.item
                     item.parentTrack = trackRoot
-                    if (isClip(model.clipType)) {
+                    if (clipItem) {
                         console.log('loaded clip: ', model.start, ', ID: ', model.item, ', index: ', trackRoot.DelegateModel.itemsIndex,', TYPE:', model.clipType)
                         item.isAudio= model.audio
                         item.markers= model.markers
@@ -239,7 +252,12 @@ Column{
                         item.canBeVideo = model.canBeVideo
                         item.itemType = model.clipType
                         item.audioChannels = model.audioChannels
-                        //item.binId= model.binId
+                        item.audioStream = model.audioStream
+                        item.multiStream = model.multiStream
+                        item.aStreamIndex = model.audioStreamIndex
+                        console.log('loaded clip with Astream: ', model.audioStream)
+                        // Speed change triggers a new clip insert so no binding necessary
+                        item.speed = model.speed
                     } else if (model.clipType == ProducerType.Composition) {
                         console.log('loaded composition: ', model.start, ', ID: ', model.item, ', index: ', trackRoot.DelegateModel.itemsIndex)
                         //item.aTrack = model.a_track
@@ -271,10 +289,16 @@ Column{
             onTrimmingIn: {
                 if (controlTrim) {
                     newDuration = controller.requestItemSpeedChange(clip.clipId, newDuration, false, root.snapping)
-                    speedController.x = clip.x + clip.width - newDuration * trackRoot.timeScale
-                    speedController.width = newDuration * trackRoot.timeScale
+                    if (!speedController.visible) {
+                        // Store original speed
+                        speedController.originalSpeed = clip.speed
+                    }
+                    clip.x += clip.width - (newDuration * trackRoot.timeScale)
+                    clip.width = newDuration * root.timeScale
+                    speedController.x = clip.x + clip.border.width
+                    speedController.width = clip.width - 2 * clip.border.width
                     speedController.lastValidDuration = newDuration
-                    speedController.speedText = (100 * clip.originalDuration * clip.speed / speedController.lastValidDuration).toFixed(2) + '%'
+                    clip.speed = clip.originalDuration * speedController.originalSpeed / newDuration
                     speedController.visible = true
                     return
                 }
@@ -285,24 +309,25 @@ Column{
                     // Show amount trimmed as a time in a "bubble" help.
                     var delta = new_duration - clip.originalDuration
                     var s = timeline.simplifiedTC(Math.abs(delta))
-                    s = '%1%2\n%3:%4'.arg((delta <= 0)? '+' : '-')
+                    s = '%1%2, %3:%4'.arg((delta <= 0)? '+' : '-')
                         .arg(s)
                         .arg(i18n("In"))
                         .arg(timeline.simplifiedTC(clip.inPoint))
-                    bubbleHelp.show(clip.x - 20, trackRoot.y + trackRoot.height, s)
+                    timeline.showToolTip(s)
+                    //bubbleHelp.show(clip.x - 20, trackRoot.y + trackRoot.height, s)
                 }
             }
             onTrimmedIn: {
-                bubbleHelp.hide()
-                if (controlTrim) {
-                    speedController.visible = false
-                }
+                //bubbleHelp.hide()
+                timeline.showToolTip();
                 if (shiftTrim || clip.groupTrimData == undefined || controlTrim) {
                     // We only resize one element
                     controller.requestItemResize(clip.clipId, clip.originalDuration, false, false, 0, shiftTrim)
                     if (controlTrim) {
                         // Update speed
-                        controller.requestClipResizeAndTimeWarp(clip.clipId, speedController.lastValidDuration, false, root.snapping, shiftTrim, clip.originalDuration * clip.speed / speedController.lastValidDuration)
+                        speedController.visible = false
+                        controller.requestClipResizeAndTimeWarp(clip.clipId, speedController.lastValidDuration, false, root.snapping, shiftTrim, clip.originalDuration * speedController.originalSpeed / speedController.lastValidDuration)
+                        speedController.originalSpeed = 1
                     } else {
                         controller.requestItemResize(clip.clipId, clip.lastValidDuration, false, true, 0, shiftTrim)
                     }
@@ -314,11 +339,16 @@ Column{
             }
             onTrimmingOut: {
                 if (controlTrim) {
-                    speedController.x = clip.x
+                    if (!speedController.visible) {
+                        // Store original speed
+                        speedController.originalSpeed = clip.speed
+                    }
+                    speedController.x = clip.x + clip.border.width
                     newDuration = controller.requestItemSpeedChange(clip.clipId, newDuration, true, root.snapping)
-                    speedController.width = newDuration * trackRoot.timeScale
+                    clip.width = newDuration * trackRoot.timeScale
+                    speedController.width = clip.width - 2 * clip.border.width
                     speedController.lastValidDuration = newDuration
-                    speedController.speedText = (100 * clip.originalDuration * clip.speed / speedController.lastValidDuration).toFixed(2) + '%'
+                    clip.speed = clip.originalDuration * speedController.originalSpeed / newDuration
                     speedController.visible = true
                     return
                 }
@@ -328,23 +358,24 @@ Column{
                     // Show amount trimmed as a time in a "bubble" help.
                     var delta = clip.originalDuration - new_duration
                     var s = timeline.simplifiedTC(Math.abs(delta))
-                    s = '%1%2\n%3:%4'.arg((delta <= 0)? '+' : '-')
+                    s = '%1%2, %3:%4'.arg((delta <= 0)? '+' : '-')
                         .arg(s)
                         .arg(i18n("Duration"))
                         .arg(timeline.simplifiedTC(new_duration))
-                    bubbleHelp.show(clip.x + clip.width - 20, trackRoot.y + trackRoot.height, s)
+                    timeline.showToolTip(s);
+                    //bubbleHelp.show(clip.x + clip.width - 20, trackRoot.y + trackRoot.height, s)
                 }
             }
             onTrimmedOut: {
-                bubbleHelp.hide()
-                if (controlTrim) {
-                    speedController.visible = false
-                }
+                timeline.showToolTip();
+                //bubbleHelp.hide()
                 if (shiftTrim || clip.groupTrimData == undefined || controlTrim) {
                     controller.requestItemResize(clip.clipId, clip.originalDuration, true, false, 0, shiftTrim)
                     if (controlTrim) {
+                        speedController.visible = false
                         // Update speed
-                        controller.requestClipResizeAndTimeWarp(clip.clipId, speedController.lastValidDuration, true, root.snapping, shiftTrim, clip.originalDuration * clip.speed / speedController.lastValidDuration)
+                        controller.requestClipResizeAndTimeWarp(clip.clipId, speedController.lastValidDuration, true, root.snapping, shiftTrim, clip.originalDuration * speedController.originalSpeed / speedController.lastValidDuration)
+                        speedController.originalSpeed = 1
                     } else {
                         controller.requestItemResize(clip.clipId, clip.lastValidDuration, true, true, 0, shiftTrim)
                     }
@@ -359,7 +390,7 @@ Column{
     Component {
         id: compositionDelegate
         Composition {
-            displayHeight: trackRoot.height / 2
+            displayHeight: Math.max(trackRoot.height / 2, trackRoot.height - (root.baseUnit * 2))
             opacity: 0.8
             selected: root.timelineSelection.indexOf(clipId) !== -1
             onTrimmingIn: {
@@ -368,16 +399,16 @@ Column{
                     clip.lastValidDuration = newDuration
                     clip.originalX = clip.draggedX
                     // Show amount trimmed as a time in a "bubble" help.
-                    var delta = newDuration - clip.originalDuration
+                    var delta = clip.originalDuration - new_duration
                     var s = timeline.simplifiedTC(Math.abs(delta))
-                    s = '%1%2 = %3'.arg((delta <= 0)? '+' : '-')
-                        .arg(s)
-                        .arg(timeline.simplifiedTC(clipDuration))
-                    bubbleHelp.show(clip.x + clip.width, trackRoot.y + trackRoot.height, s)
+                    s = i18n("%1%2, Duration = %3", ((delta <= 0)? '+' : '-')
+                        , s, timeline.simplifiedTC(new_duration))
+                    timeline.showToolTip(s)
                 }
             }
             onTrimmedIn: {
-                bubbleHelp.hide()
+                timeline.showToolTip()
+                //bubbleHelp.hide()
                 controller.requestItemResize(clip.clipId, clip.originalDuration, false, false, root.snapping)
                 controller.requestItemResize(clip.clipId, clip.lastValidDuration, false, true, root.snapping)
             }
@@ -386,16 +417,16 @@ Column{
                 if (new_duration > 0) {
                     clip.lastValidDuration = newDuration
                     // Show amount trimmed as a time in a "bubble" help.
-                    var delta = newDuration - clip.originalDuration
+                    var delta = clip.originalDuration - new_duration
                     var s = timeline.simplifiedTC(Math.abs(delta))
-                    s = '%1%2 = %3'.arg((delta <= 0)? '+' : '-')
-                        .arg(s)
-                        .arg(timeline.simplifiedTC(clipDuration))
-                    bubbleHelp.show(clip.x + clip.width, trackRoot.y + trackRoot.height, s)
+                    s = i18n("%1%2, Duration = %3", ((delta <= 0)? '+' : '-')
+                        , s, timeline.simplifiedTC(new_duration))
+                    timeline.showToolTip(s)
                 }
             }
             onTrimmedOut: {
-                bubbleHelp.hide()
+                timeline.showToolTip()
+                //bubbleHelp.hide()
                 controller.requestItemResize(clip.clipId, clip.originalDuration, true, false, root.snapping)
                 controller.requestItemResize(clip.clipId, clip.lastValidDuration, true, true, root.snapping)
             }
@@ -403,21 +434,23 @@ Column{
     }
     Rectangle {
         id: speedController
-        color: '#aaff0000'
+        anchors.bottom: parent.bottom
+        color: activePalette.highlight //'#cccc0000'
         visible: false
-        height: root.baseUnit * 3
+        height: root.baseUnit * 1.5
         property int lastValidDuration: 0
-        property string speedText: '100%'
+        property real originalSpeed: 1
         Text {
             id: speedLabel
-            text: i18n("Adjusting speed:\n") + speedController.speedText
-            font.pixelSize: root.baseUnit * 1.2
+            text: i18n("Adjusting speed")
+            font: miniFont
             anchors.fill: parent
             verticalAlignment: Text.AlignVCenter
             horizontalAlignment: Text.AlignHCenter
-            color: 'white'
-            style: Text.Outline
-            styleColor: 'black'
+            color: activePalette.highlightedText
         }
+        transitions: [ Transition {
+            NumberAnimation { property: "opacity"; duration: 300}
+        } ]
     }
 }

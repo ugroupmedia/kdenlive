@@ -36,7 +36,7 @@
 #include <memory>
 #include <mlt++/Mlt.h>
 StabilizeJob::StabilizeJob(const QString &binId, const QString &filterName, QString destUrl, std::unordered_map<QString, QString> filterParams)
-    : MeltJob(binId, STABILIZEJOB, false, -1, -1)
+    : MeltJob(binId, {ObjectType::BinClip, binId.toInt()}, STABILIZEJOB, false, -1, -1)
     , m_filterName(filterName)
     , m_destUrl(std::move(destUrl))
     , m_filterParams(std::move(filterParams))
@@ -53,7 +53,7 @@ void StabilizeJob::configureConsumer()
     m_consumer = std::make_unique<Mlt::Consumer>(*m_profile.get(), "xml", m_destUrl.toUtf8().constData());
     m_consumer->set("all", 1);
     m_consumer->set("title", "Stabilized");
-    m_consumer->set("real_time", -KdenliveSettings::mltthreads());
+    m_consumer->set("real_time", -1);
 }
 
 void StabilizeJob::configureFilter()
@@ -71,6 +71,7 @@ void StabilizeJob::configureFilter()
     }
     QString targetFile = m_destUrl + QStringLiteral(".trf");
     m_filter->set("filename", targetFile.toUtf8().constData());
+    m_filter->set_in_and_out(0, length - 1);
 }
 
 // static
@@ -92,7 +93,7 @@ int StabilizeJob::prepareJob(const std::shared_ptr<JobManager> &ptr, const std::
             QString destination = d->destination();
             std::unordered_map<QString, QString> destinations; // keys are binIds, values are path to target files
             for (const auto &binId : binIds) {
-                auto binClip = pCore->projectItemModel()->getClipByBinID(binId);
+                auto binClip = pCore->projectItemModel()->getClipByBinID(binId.section(QLatin1Char('/'), 0, 0));
                 if (binIds.size() == 1) {
                     // We only have one clip, destination points to the final url
                     destinations[binId] = destination;
@@ -112,7 +113,7 @@ int StabilizeJob::prepareJob(const std::shared_ptr<JobManager> &ptr, const std::
             // We are now all set to create the job. Note that we pass all the parameters directly through the lambda, hence there are no extra parameters to
             // the function
             using local_createFn_t = std::function<std::shared_ptr<StabilizeJob>(const QString &)>;
-            return ptr->startJob<StabilizeJob>(binIds, parentId, std::move(undoString), local_createFn_t(std::move(createFn)));
+            return emit ptr->startJob<StabilizeJob>(binIds, parentId, std::move(undoString), local_createFn_t(std::move(createFn)));
         }
     }
     return -1;

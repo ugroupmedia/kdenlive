@@ -34,123 +34,93 @@
 #include <mlt++/Mlt.h>
 static void consumer_frame_render(mlt_consumer, MeltJob *self, mlt_frame frame_ptr)
 {
-    self->jobProgress((int)(100 * mlt_frame_get_position(frame_ptr) / self->length));
+    emit self->jobProgress((int)(100 * mlt_frame_get_position(frame_ptr) / self->length));
 }
 
-MeltJob::MeltJob(const QString &binId, JOBTYPE type, bool useProducerProfile, int in, int out)
-    : AbstractClipJob(type, binId)
+MeltJob::MeltJob(const QString &binId, const ObjectId &owner, JOBTYPE type, bool useProducerProfile, int in, int out)
+    : AbstractClipJob(type, binId, owner)
     , m_useProducerProfile(useProducerProfile)
     , m_in(in)
     , m_out(out)
     , m_requiresFilter(true)
 {
+    if (m_in == -1) {
+        m_in = m_inPoint;
+    }
+    if (m_out == -1) {
+        m_out = m_outPoint;
+    }
 }
 
 bool MeltJob::startJob()
 {
     auto binClip = pCore->projectItemModel()->getClipByBinID(m_clipId);
-    m_url = binClip->url();
-    if (m_url.isEmpty()) {
-        m_errorMessage.append(i18n("No producer for this clip."));
-        m_successful = false;
-        m_done = true;
-        return false;
-    }
-    /*
-    QString consumerName = m_consumerParams.value(QStringLiteral("consumer"));
-    // safety check, make sure we don't overwrite a source clip
-    if (!m_dest.isEmpty() && !m_dest.endsWith(QStringLiteral(".mlt"))) {
-        m_errorMessage.append(i18n("Invalid destination: %1.", consumerName));
-        setStatus(JobCrashed);
-        return;
-    }
-    int in = m_producerParams.value(QStringLiteral("in")).toInt();
-    if (in > 0 && !m_extra.contains(QStringLiteral("offset"))) {
-        m_extra.insert(QStringLiteral("offset"), QString::number(in));
-    }
-    int out = m_producerParams.value(QStringLiteral("out")).toInt();
-    QString filterName = m_filterParams.value(QStringLiteral("filter"));
+    if (binClip) {
+        // Filter applied on a timeline or bin clip
+        m_url = binClip->url();
+        if (m_url.isEmpty()) {
+            m_errorMessage.append(i18n("No producer for this clip."));
+            m_successful = false;
+            m_done = true;
+            return false;
+        }
 
-    // optional params
-    int startPos = -1;
-    int track = -1;
-
-    // used when triggering a job from an effect
-    if (m_extra.contains(QStringLiteral("clipStartPos"))) {
-        startPos = m_extra.value(QStringLiteral("clipStartPos")).toInt();
-    }
-    if (m_extra.contains(QStringLiteral("clipTrack"))) {
-        track = m_extra.value(QStringLiteral("clipTrack")).toInt();
-    }
-
-    if (!m_extra.contains(QStringLiteral("finalfilter"))) {
-        m_extra.insert(QStringLiteral("finalfilter"), filterName);
-    }
-
-    if (out != -1 && out <= in) {
-        m_errorMessage.append(i18n("Clip zone undefined (%1 - %2).", in, out));
-        setStatus(JobCrashed);
-        return;
-    }
-    */
-    auto &projectProfile = pCore->getCurrentProfile();
-    // bool producerProfile = m_extra.contains(QStringLiteral("producer_profile"));
-    if (m_useProducerProfile) {
-        m_profile.reset(new Mlt::Profile());
-        m_profile->set_explicit(0);
-    } else {
-        m_profile.reset(&projectProfile->profile());
-    }
-    double fps = projectProfile->fps();
-    int fps_num = projectProfile->frame_rate_num();
-    int fps_den = projectProfile->frame_rate_den();
-
-    m_producer = std::make_unique<Mlt::Producer>(*m_profile.get(), m_url.toUtf8().constData());
-
-    if (m_producer && m_useProducerProfile) {
-        m_profile->from_producer(*m_producer.get());
-        m_profile->set_explicit(1);
-        configureProfile();
-        if (!qFuzzyCompare(m_profile->fps(), fps)) {
-            // Reload producer
-            // Force same fps as projec profile or the resulting .mlt will not load in our project
-            qDebug()<<"/// FORCING FRAME RATE TO: "<<fps_num<<"\n-------------------";
-            m_profile->set_frame_rate(fps_num, fps_den);
+        auto &projectProfile = pCore->getCurrentProfile();
+        if (m_useProducerProfile) {
+            m_profile.reset(new Mlt::Profile());
+            m_profile->set_explicit(0);
+        } else {
+            m_profile.reset(&projectProfile->profile());
+        }
+        double fps = projectProfile->fps();
+        int fps_num = projectProfile->frame_rate_num();
+        int fps_den = projectProfile->frame_rate_den();
+        if (KdenliveSettings::gpu_accel()) {
+            m_producer = binClip->getClone();
+            Mlt::Filter converter(*m_profile.get(), "avcolor_space");
+            m_producer->attach(converter);
+        } else {
             m_producer = std::make_unique<Mlt::Producer>(*m_profile.get(), m_url.toUtf8().constData());
         }
+        if (m_producer && m_useProducerProfile) {
+            m_profile->from_producer(*m_producer.get());
+            m_profile->set_explicit(1);
+            configureProfile();
+            if (!qFuzzyCompare(m_profile->fps(), fps)) {
+                // Reload producer
+                // Force same fps as projec profile or the resulting .mlt will not load in our project
+                qDebug()<<"/// FORCING FRAME RATE TO: "<<fps_num<<"\n-------------------";
+                m_profile->set_frame_rate(fps_num, fps_den);
+                m_producer = std::make_unique<Mlt::Producer>(*m_profile.get(), m_url.toUtf8().constData());
+            }
+        }
+        if ((m_producer == nullptr) || !m_producer->is_valid()) {
+            // Clip was removed or something went wrong, Notify user?
+            m_errorMessage.append(i18n("Invalid clip"));
+            m_successful = false;
+            m_done = true;
+            return false;
+        }
+        if (m_out == -1) {
+            m_out = m_producer->get_length() - 1;
+        }
+        if (m_in == -1) {
+            m_in = 0;
+        }
+        if (m_in != 0 || m_out != m_producer->get_length() - 1) {
+            std::swap(m_wholeProducer, m_producer);
+            m_producer.reset(m_wholeProducer->cut(m_in, m_out));
+        }
+    } else {
+        // Filter applied on a track of master producer, leave config to source job
     }
-    if ((m_producer == nullptr) || !m_producer->is_valid()) {
-        // Clip was removed or something went wrong, Notify user?
-        m_errorMessage.append(i18n("Invalid clip"));
-        m_successful = false;
-        m_done = true;
-        return false;
-    }
-
-    /*
-    // Process producer params
-    QMapIterator<QString, QString> i(m_producerParams);
-    QStringList ignoredProps;
-    ignoredProps << QStringLiteral("producer") << QStringLiteral("in") << QStringLiteral("out");
-    while (i.hasNext()) {
-        i.next();
-        QString key = i.key();
-        if (!ignoredProps.contains(key)) {
-            producer->set(i.key().toUtf8().constData(), i.value().toUtf8().constData());
+    if (m_producer != nullptr) {
+        length = m_producer->get_playtime();
+        if (length == 0) {
+            length = m_producer->get_length();
         }
     }
-    */
 
-    if (m_out == -1) {
-        m_out = m_producer->get_playtime() - 1;
-    }
-    if (m_in == -1) {
-        m_in = 0;
-    }
-    if (m_out != m_producer->get_playtime() - 1 || m_in != 0) {
-        std::swap(m_wholeProducer, m_producer);
-        m_producer.reset(m_wholeProducer->cut(m_in, m_out));
-    }
     configureProducer();
     if ((m_producer == nullptr) || !m_producer->is_valid()) {
         // Clip was removed or something went wrong, Notify user?
@@ -176,7 +146,7 @@ bool MeltJob::startJob()
     }
     /*
     if (!m_consumerParams.contains(QStringLiteral("real_time"))) {
-        m_consumer->set("real_time", -KdenliveSettings::mltthreads());
+        m_consumer->set("real_time", -1);
     }
     */
 
@@ -231,40 +201,24 @@ bool MeltJob::startJob()
     }
 
     Mlt::Tractor tractor(*m_profile.get());
-    Mlt::Playlist playlist;
-    playlist.append(*m_producer.get());
-    tractor.set_track(playlist, 0);
+    tractor.set_track(*m_producer.get(), 0);
     m_consumer->connect(tractor);
     m_producer->set_speed(0);
     m_producer->seek(0);
-    length = m_producer->get_playtime();
-    if (length == 0) {
-        length = m_producer->get_length();
-    }
     if (m_filter) {
         m_producer->attach(*m_filter.get());
     }
+    qDebug()<<"=== FILTER READY TO PROCESS; LENGTH: "<<length;
     m_showFrameEvent.reset(m_consumer->listen("consumer-frame-show", this, (mlt_listener)consumer_frame_render));
     connect(this, &MeltJob::jobCanceled, [&] () {
         m_showFrameEvent.reset();
         m_consumer->stop();
+        m_successful = false;
+        m_done = true;
         return false;
     });
     m_consumer->run();
-
-    /*
-    QMap<QString, QString> jobResults;
-    if (m_jobStatus != JobAborted && m_extra.contains(QStringLiteral("key"))) {
-        QString result = QString::fromLatin1(m_filter->get(m_extra.value(QStringLiteral("key")).toUtf8().constData()));
-        jobResults.insert(m_extra.value(QStringLiteral("key")), result);
-    }
-    if (!jobResults.isEmpty() && m_jobStatus != JobAborted) {
-        emit gotFilterJobResults(m_clipId, startPos, track, jobResults, m_extra);
-    }
-    if (m_jobStatus == JobWorking) {
-        m_jobStatus = JobDone;
-    }
-    */
+    qDebug()<<"===============FILTER PROCESSED\n\n==============0";
     m_successful = m_done = true;
     return true;
 }

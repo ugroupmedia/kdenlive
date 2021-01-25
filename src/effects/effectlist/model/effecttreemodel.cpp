@@ -32,6 +32,7 @@
 #include <KActionCategory>
 #include <QDebug>
 #include <QMenu>
+#include <QMessageBox>
 
 EffectTreeModel::EffectTreeModel(QObject *parent)
     : AssetTreeModel(parent)
@@ -63,9 +64,13 @@ std::shared_ptr<EffectTreeModel> EffectTreeModel::construct(const QString &categ
             if (!KdenliveSettings::gpu_accel() && groupName == i18n("GPU effects")) {
                 continue;
             }
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
             QStringList list = groups.at(i).toElement().attribute(QStringLiteral("list")).split(QLatin1Char(','), QString::SkipEmptyParts);
+#else
+            QStringList list = groups.at(i).toElement().attribute(QStringLiteral("list")).split(QLatin1Char(','), Qt::SkipEmptyParts);
+#endif
             auto groupItem = self->rootItem->appendChild(QList<QVariant>{groupName, QStringLiteral("root")});
-            for (const QString &effect : list) {
+            for (const QString &effect : qAsConst(list)) {
                 effectCategory[effect] = groupItem;
             }
         }
@@ -83,16 +88,16 @@ std::shared_ptr<EffectTreeModel> EffectTreeModel::construct(const QString &categ
     // We parse effects
     auto allEffects = EffectsRepository::get()->getNames();
     QString favCategory = QStringLiteral("kdenlive:favorites");
-    for (const auto &effect : allEffects) {
+    for (const auto &effect : qAsConst(allEffects)) {
         auto targetCategory = miscCategory;
-        EffectType type = EffectsRepository::get()->getType(effect.first);
+        AssetListType::AssetType type = EffectsRepository::get()->getType(effect.first);
         if (effectCategory.contains(effect.first)) {
             targetCategory = effectCategory[effect.first];
-        } else if (type == EffectType::Audio) {
+        } else if (type == AssetListType::AssetType::Audio) {
             targetCategory = audioCategory;
         }
 
-        if (type == EffectType::Custom || type == EffectType::CustomAudio) {
+        if (type == AssetListType::AssetType::Custom || type == AssetListType::AssetType::CustomAudio) {
             targetCategory = self->m_customCategory;
         }
 
@@ -109,15 +114,44 @@ std::shared_ptr<EffectTreeModel> EffectTreeModel::construct(const QString &categ
     return self;
 }
 
+void EffectTreeModel::reloadEffectFromIndex(const QModelIndex &index)
+{
+    if (!index.isValid()) {
+        return;
+    }
+    std::shared_ptr<TreeItem> item = getItemById((int)index.internalId());
+    const QString path = EffectsRepository::get()->getCustomPath(item->dataColumn(idCol).toString());
+    reloadEffect(path);
+}
+
 void EffectTreeModel::reloadEffect(const QString &path)
 {
     QPair<QString, QString> asset = EffectsRepository::get()->reloadCustom(path);
     if (asset.first.isEmpty() || m_customCategory == nullptr) {
         return;
     }
+    // Check if item already existed, and remove
+    for (int i = 0; i < m_customCategory->childCount(); i++) {
+        std::shared_ptr<TreeItem> item = m_customCategory->child(i);
+        if (item->dataColumn(idCol).toString() == asset.first) {
+            m_customCategory->removeChild(item);
+            break;
+        }
+    }
     bool isFav = KdenliveSettings::favorite_effects().contains(asset.first);
-    QList<QVariant> data {asset.first, asset.first, QVariant::fromValue(EffectType::Custom), isFav};
+    QList<QVariant> data {asset.first, asset.first, QVariant::fromValue(AssetListType::AssetType::Custom), isFav};
     m_customCategory->appendChild(data);
+}
+
+void EffectTreeModel::deleteEffect(const QModelIndex &index)
+{
+    if (!index.isValid()) {
+        return;
+    }
+    std::shared_ptr<TreeItem> item = getItemById((int)index.internalId());
+    const QString id = item->dataColumn(idCol).toString();
+    m_customCategory->removeChild(item);
+    EffectsRepository::get()->deleteEffect(id);
 }
 
 void EffectTreeModel::reloadAssetMenu(QMenu *effectsMenu, KActionCategory *effectActions)
@@ -161,4 +195,81 @@ void EffectTreeModel::setFavorite(const QModelIndex &index, bool favorite, bool 
         favs << id;
     }
     KdenliveSettings::setFavorite_effects(favs);
+}
+
+void EffectTreeModel::editCustomAsset(const QString newName,const QString newDescription, const QModelIndex &index)
+{
+
+    std::shared_ptr<TreeItem> item = getItemById((int)index.internalId());
+    QString currentName = item->dataColumn(AssetTreeModel::nameCol).toString();
+
+    QDomDocument doc;
+
+    QDomElement effect = EffectsRepository::get()->getXml(currentName);
+    QDir dir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/effects/"));
+    QString oldpath =  dir.absoluteFilePath(currentName + QStringLiteral(".xml"));
+
+    doc.appendChild(doc.importNode(effect, true));
+
+
+
+    if(!newDescription.trimmed().isEmpty()){
+        QDomElement root = doc.documentElement();
+        QDomElement nodelist = root.firstChildElement("description");
+        QDomElement newNodeTag = doc.createElement(QString("description"));
+        QDomText text = doc.createTextNode(newDescription);
+        newNodeTag.appendChild(text);
+        if (!nodelist.isNull()) {
+            root.replaceChild(newNodeTag, nodelist);
+        } else {
+            root.appendChild(newNodeTag);
+        }
+    }
+
+    if(!newName.trimmed().isEmpty() && newName != currentName)
+    {
+        QDir dir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/effects/"));
+        if (!dir.exists()) {
+            dir.mkpath(QStringLiteral("."));
+        }
+
+        if (dir.exists(newName + QStringLiteral(".xml"))){
+            QMessageBox message;
+            message.critical(0, i18n("Error"), i18n("Effect name %1 already exists.\n Try another name?", newName));
+            message.setFixedSize(400, 200);
+            return;
+        }
+        QFile file(dir.absoluteFilePath(newName + QStringLiteral(".xml")));
+
+        QDomElement root = doc.documentElement();
+        QDomElement nodelist = root.firstChildElement("name");
+        QDomElement newNodeTag = doc.createElement(QString("name"));
+        QDomText text = doc.createTextNode(newName);
+        newNodeTag.appendChild(text);
+        root.replaceChild(newNodeTag, nodelist);
+
+        QDomElement e = doc.documentElement();
+        e.setAttribute("id", newName);
+
+        if (file.open(QFile::WriteOnly | QFile::Truncate)) {
+            QTextStream out(&file);
+            out << doc.toString();
+        }
+        file.close();
+
+        deleteEffect(index);
+        reloadEffect(dir.absoluteFilePath(newName + QStringLiteral(".xml")));
+
+    }
+    else
+    {
+        QFile file(dir.absoluteFilePath(currentName + QStringLiteral(".xml")));
+        if (file.open(QFile::WriteOnly | QFile::Truncate)) {
+            QTextStream out(&file);
+            out << doc.toString();
+        }
+        file.close();
+        reloadEffect(oldpath);
+    }
+
 }

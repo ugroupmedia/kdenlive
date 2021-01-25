@@ -6,9 +6,10 @@ set(kdenlive_SRCS
   dialogs/markerdialog.cpp
   dialogs/profilesdialog.cpp
   dialogs/renderwidget.cpp
-  dialogs/splash.cpp
+  dialogs/subtitleedit.cpp
   dialogs/titletemplatedialog.cpp
   dialogs/twigcodedialog.cpp
   dialogs/wizard.cpp
+  dialogs/splash.cpp
   PARENT_SCOPE)
 

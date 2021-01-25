@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "jobs/thumbjob.hpp"
 
 #include <QPainter>
+#include <QPainterPath>
 #include <QVariant>
 #include <utility>
 AbstractProjectItem::AbstractProjectItem(PROJECTITEMTYPE type, QString id, const std::shared_ptr<ProjectItemModel> &model, bool isRoot)
@@ -42,7 +43,8 @@ AbstractProjectItem::AbstractProjectItem(PROJECTITEMTYPE type, QString id, const
     , m_date()
     , m_binId(std::move(id))
     , m_usage(0)
-    , m_clipStatus(StatusReady)
+    , m_rating(0)
+    , m_clipStatus(FileStatus::StatusReady)
     , m_itemType(type)
     , m_lock(QReadWriteLock::Recursive)
     , m_isCurrent(false)
@@ -100,7 +102,7 @@ const QString &AbstractProjectItem::clipId() const
 QPixmap AbstractProjectItem::roundedPixmap(const QPixmap &source)
 {
     QPixmap pix(source.size());
-    pix.fill(Qt::transparent);
+    pix.fill(QColor(0, 0, 0, 100));
     QPainter p(&pix);
     p.setRenderHint(QPainter::Antialiasing, true);
     QPainterPath path;
@@ -130,7 +132,7 @@ QVariant AbstractProjectItem::getData(DataType type) const
         data = QVariant(m_thumbnail);
         break;
     case DataId:
-        data = QVariant(m_binId);
+        data = QVariant(m_binId.toInt());
         break;
     case DataDuration:
         data = QVariant(m_duration);
@@ -155,6 +157,12 @@ QVariant AbstractProjectItem::getData(DataType type) const
         break;
     case ClipType:
         data = clipType();
+        break;
+    case DataTag:
+        data = QVariant(m_tags);
+        break;
+    case DataRating:
+        data = QVariant(m_rating);
         break;
     case ClipHasAudioAndVideo:
         data = hasAudioAndVideo();
@@ -218,7 +226,7 @@ QVariant AbstractProjectItem::getData(DataType type) const
 
 int AbstractProjectItem::supportedDataCount() const
 {
-    return 3;
+    return 8;
 }
 
 QString AbstractProjectItem::name() const
@@ -246,17 +254,17 @@ QPoint AbstractProjectItem::zone() const
     return {};
 }
 
-void AbstractProjectItem::setClipStatus(CLIPSTATUS status)
+void AbstractProjectItem::setClipStatus(FileStatus::ClipStatus status)
 {
     m_clipStatus = status;
 }
 
 bool AbstractProjectItem::statusReady() const
 {
-    return m_clipStatus == StatusReady;
+    return m_clipStatus == FileStatus::StatusReady || m_clipStatus == FileStatus::StatusProxy || m_clipStatus == FileStatus::StatusProxyOnly;
 }
 
-AbstractProjectItem::CLIPSTATUS AbstractProjectItem::clipStatus() const
+FileStatus::ClipStatus AbstractProjectItem::clipStatus() const
 {
     return m_clipStatus;
 }
@@ -302,4 +310,25 @@ void AbstractProjectItem::updateParent(std::shared_ptr<TreeItem> newParent)
         m_lastParentId = std::static_pointer_cast<AbstractProjectItem>(newParent)->clipId();
     }
     TreeItem::updateParent(newParent);
+}
+
+const QString & AbstractProjectItem::tags() const
+{
+    return m_tags;
+}
+
+void AbstractProjectItem::setTags(const QString tags)
+{
+    m_tags = tags;
+}
+
+
+uint AbstractProjectItem::rating() const
+{
+    return m_rating;
+}
+
+void AbstractProjectItem::setRating(uint rating)
+{
+    m_rating = rating;
 }

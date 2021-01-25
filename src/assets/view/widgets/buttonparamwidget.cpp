@@ -41,12 +41,22 @@ ButtonParamWidget::ButtonParamWidget(std::shared_ptr<AssetParameterModel> model,
     //QString name = m_model->data(m_index, AssetParameterModel::NameRole).toString();
     QString comment = m_model->data(m_index, AssetParameterModel::CommentRole).toString();
     setToolTip(comment);
-    setEnabled(m_model->getOwnerId().first != ObjectType::TimelineTrack);
+    //setEnabled(m_model->getOwnerId().first != ObjectType::TimelineTrack);
     auto *layout = new QVBoxLayout(this);
     QVariantList filterData = m_model->data(m_index, AssetParameterModel::FilterJobParamsRole).toList();
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     QStringList filterAddedParams = m_model->data(m_index, AssetParameterModel::FilterParamsRole).toString().split(QLatin1Char(' '), QString::SkipEmptyParts);
+#else
+    QStringList filterAddedParams = m_model->data(m_index, AssetParameterModel::FilterParamsRole).toString().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+#endif
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
+    QStringList consumerParams = m_model->data(m_index, AssetParameterModel::FilterConsumerParamsRole).toString().split(QLatin1Char(' '), QString::SkipEmptyParts);
+#else
+    QStringList consumerParams = m_model->data(m_index, AssetParameterModel::FilterConsumerParamsRole).toString().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+#endif
+
     QString conditionalInfo;
-    for (const QVariant jobElement : filterData) {
+    for (const QVariant &jobElement : qAsConst(filterData)) {
         QStringList d = jobElement.toStringList();
         if (d.size() == 2) {
             if (d.at(0) == QLatin1String("conditionalinfo")) {
@@ -58,7 +68,7 @@ ButtonParamWidget::ButtonParamWidget(std::shared_ptr<AssetParameterModel> model,
     }
     QVector<QPair<QString, QVariant>> filterParams = m_model->getAllParameters();
     m_displayConditional = true;
-    for (const auto &param : filterParams) {
+    for (const auto &param : qAsConst(filterParams)) {
         if (param.first == m_keyParam) {
             if (!param.second.toString().isEmpty()) {
                 m_displayConditional = false;
@@ -79,7 +89,7 @@ ButtonParamWidget::ButtonParamWidget(std::shared_ptr<AssetParameterModel> model,
     setMinimumHeight(m_button->sizeHint().height() + (m_label != nullptr ? m_label->sizeHint().height() : 0));
 
     // emit the signal of the base class when appropriate
-    connect(this->m_button, &QPushButton::clicked, [&, filterData, filterAddedParams]() {
+    connect(this->m_button, &QPushButton::clicked, this, [&, filterData, filterAddedParams, consumerParams]() {
         // Trigger job
         if (!m_displayConditional) {
             QVector<QPair<QString, QVariant>> values;
@@ -102,23 +112,29 @@ ButtonParamWidget::ButtonParamWidget(std::shared_ptr<AssetParameterModel> model,
             binId = pCore->getTimelineClipBinId(cid);
             in = pCore->getItemIn(owner);
             out = in + pCore->getItemDuration(owner);
+        } else if (owner.first == ObjectType::TimelineTrack || owner.first == ObjectType::Master) {
+            in = 0;
+            out = pCore->getItemDuration(owner);
+            binId = QStringLiteral("-1");
         }
         std::unordered_map<QString, QVariant> fParams;
         std::unordered_map<QString, QString> fData;
-        for (const QVariant jobElement : filterData) {
+        for (const QVariant &jobElement : filterData) {
             QStringList d = jobElement.toStringList();
             if (d.size() == 2)
             fData.insert({d.at(0), d.at(1)});
         }
-        for (const auto &param : filterLastParams) {
-            fParams.insert({param.first, param.second});
+        for (const auto &param : qAsConst(filterLastParams)) {
+            if (param.first != m_keyParam) {
+                fParams.insert({param.first, param.second});
+            }
         }
         for (const QString &fparam : filterAddedParams) {
             if (fparam.contains(QLatin1Char('='))) {
                 fParams.insert({fparam.section(QLatin1Char('='), 0, 0), fparam.section(QLatin1Char('='), 1)});
             }
         }
-        pCore->jobManager()->startJob<FilterClipJob>({binId}, -1, QString(), cid, m_model, assetId, in, out, assetId, fParams, fData);
+        emit pCore->jobManager()->startJob<FilterClipJob>({binId}, -1, QString(), owner, m_model, assetId, in, out, assetId, fParams, fData, consumerParams);
         if (m_label) {
             m_label->setVisible(false);
         }
@@ -138,7 +154,7 @@ void ButtonParamWidget::slotRefresh()
 {
     QVector<QPair<QString, QVariant>> filterParams = m_model->getAllParameters();
     m_displayConditional = true;
-    for (const auto &param : filterParams) {
+    for (const auto &param : qAsConst(filterParams)) {
         if (param.first == m_keyParam && !param.second.isNull()) {
             m_displayConditional = false;
             break;

@@ -53,6 +53,8 @@ public:
 
     /* @brief Return true if the effect or effect group applies only to audio */
     virtual bool isAudio() const = 0;
+    /* @brief Return true if this effect can only have one instance in an effect stack */
+    virtual bool isUnique() const = 0;
 
     /* @brief This function plants the effect into the given service in last position
      */
@@ -64,8 +66,8 @@ public:
     virtual void unplantClone(const std::weak_ptr<Mlt::Service> &service) = 0;
 
 protected:
-    /* @brief Toogles the mlt effect according to the current activation state*/
-    virtual void updateEnable() = 0;
+    /* @brief Toggles the mlt effect according to the current activation state*/
+    virtual void updateEnable(bool updateTimeline = true) = 0;
 
     EffectItemType m_effectItemType;
     bool m_enabled;

@@ -53,7 +53,6 @@ TransitionListWidget::TransitionListWidget(QWidget *parent)
 
 TransitionListWidget::~TransitionListWidget()
 {
-    delete m_proxy;
     qDebug() << " - - -Deleting transition list widget";
 }
 
@@ -67,7 +66,7 @@ QString TransitionListWidget::getMimeType(const QString &assetId) const
 
 void TransitionListWidget::updateFavorite(const QModelIndex &index)
 {
-    m_proxyModel->dataChanged(index, index, QVector<int>());
+    emit m_proxyModel->dataChanged(index, index, QVector<int>());
     m_proxyModel->reloadFilterOnFavorite();
     emit reloadFavorites();
 }
@@ -75,9 +74,9 @@ void TransitionListWidget::updateFavorite(const QModelIndex &index)
 void TransitionListWidget::setFilterType(const QString &type)
 {
     if (type == "favorites") {
-        static_cast<TransitionFilter *>(m_proxyModel.get())->setFilterType(true, TransitionType::Favorites);
+        static_cast<TransitionFilter *>(m_proxyModel.get())->setFilterType(true, AssetListType::AssetType::Favorites);
     } else {
-        static_cast<TransitionFilter *>(m_proxyModel.get())->setFilterType(false, TransitionType::Favorites);
+        static_cast<TransitionFilter *>(m_proxyModel.get())->setFilterType(false, AssetListType::AssetType::Favorites);
     }
 }
 
@@ -88,7 +87,7 @@ int TransitionListWidget::getNewStuff(const QString &configFile)
     if (dialog->exec() != 0) {
         entries = dialog->changedEntries();
     }
-    for (const KNS3::Entry &entry : entries) {
+    for (const KNS3::Entry &entry : qAsConst(entries)) {
         if (entry.status() == KNS3::Entry::Installed) {
             qCDebug(KDENLIVE_LOG) << "// Installed files: " << entry.installedFiles();
         }
@@ -103,4 +102,13 @@ void TransitionListWidget::downloadNewLumas()
         MltConnection::refreshLumas();
         // TODO: refresh currently displayd trans ?
     }
+}
+
+void TransitionListWidget::reloadCustomEffectIx(const QModelIndex &path)
+{
+}
+
+void TransitionListWidget::editCustomAsset(const QModelIndex &index)
+{
+
 }

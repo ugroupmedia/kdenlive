@@ -303,7 +303,7 @@ AudioGraphSpectrum::AudioGraphSpectrum(MonitorManager *manager, QWidget *parent)
     QAction *a = new QAction(i18n("Enable Audio Spectrum"), this);
     a->setCheckable(true);
     a->setChecked(KdenliveSettings::enableaudiospectrum());
-    if (KdenliveSettings::enableaudiospectrum()) {
+    if (KdenliveSettings::enableaudiospectrum() && isVisible()) {
         connect(m_manager, &MonitorManager::frameDisplayed, this, &ScopeWidget::onNewFrame, Qt::UniqueConnection);
     }
     connect(a, &QAction::triggered, this, &AudioGraphSpectrum::activate);
@@ -315,6 +315,17 @@ AudioGraphSpectrum::~AudioGraphSpectrum()
 {
     delete m_graphWidget;
     delete m_filter;
+}
+
+void AudioGraphSpectrum::dockVisible(bool visible)
+{
+    if (KdenliveSettings::enableaudiospectrum())  {
+        if (!visible) {
+            disconnect(m_manager, &MonitorManager::frameDisplayed, this, &ScopeWidget::onNewFrame);
+        } else {
+            connect(m_manager, &MonitorManager::frameDisplayed, this, &ScopeWidget::onNewFrame);
+        }
+    }
 }
 
 void AudioGraphSpectrum::activate(bool enable)
@@ -402,5 +413,5 @@ void AudioGraphSpectrum::processSpectrum()
     }
 
     // Update the audio signal widget
-    QMetaObject::invokeMethod(m_graphWidget, "showAudio", Qt::QueuedConnection, Q_ARG(const QVector<double> &, bands));
+    QMetaObject::invokeMethod(m_graphWidget, "showAudio", Qt::QueuedConnection, Q_ARG(QVector<double>, bands));
 }

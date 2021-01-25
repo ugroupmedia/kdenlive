@@ -1,16 +1,23 @@
 <!DOCTYPE kpartgui SYSTEM "kpartgui.dtd">
-<kpartgui name="kdenlive" version="168" translationDomain="kdenlive">
+<kpartgui name="kdenlive" version="198" translationDomain="kdenlive">
   <MenuBar>
     <Menu name="file" >
+      <Action name="file_save"/>
+      <Action name="file_save_as"/>
+      <Action name="file_save_copy"/>
+      <Action name="file_revert"/>
+      <Separator />
       <Action name="dvd_wizard" />
       <Action name="transcode_clip" />
+      <Action name="export_project" />
+      <Action name="import_project" />
     </Menu>
     <Menu name="edit" >
       <Action name="paste_effects" />
       <Action name="project_find" />
       <Action name="project_find_next" />
     </Menu>
-    <Menu name="project" ><text>Project</text>
+    <Menu name="go" noMerge="1"><text>&amp;Project</text>
       <Action name="add_clip" />
       <Action name="add_color_clip" />
       <Action name="add_slide_clip" />
@@ -20,6 +27,15 @@
       <Action name="download_resource" /> 
       <Menu name="generators" ><text>Generators</text>
       </Menu>
+      <Menu name="subtitles" ><text>Subtitles</text>
+          <Action name="subtitle_tool" />
+          <Action name="add_subtitle" />
+          <Action name="disable_subtitle" />
+          <Action name="lock_subtitle" />
+          <Separator />
+          <Action name="import_subtitle" />
+          <Action name="export_subtitle" />
+      </Menu>
       <Separator />
       <Action name="bin_view_mode" />
       <Action name="stopmotion" />
@@ -27,9 +43,9 @@
       <Action name="project_clean" />
       <Action name="project_render" />
       <Action name="project_adjust_profile" />
-      <Action name="project_settings" />
-      <Action name="open_backup" />
       <Action name="archive_project" />
+      <Action name="open_backup" />
+      <Action name="project_settings" />
     </Menu>
 
     <Menu name="tool" ><text>Tool</text>
@@ -42,7 +58,7 @@
       <Action name="spacer_tool" />
     </Menu>
 
-    <Menu name="clip" ><text>Clip</text>
+    <Menu name="clip" ><text>&amp;Clip</text>
           <Menu name="marker_menu" ><text>Markers</text>
         <Action name="add_clip_marker" />
         <Action name="add_marker_guide_quickly" />
@@ -51,6 +67,7 @@
         <Action name="delete_all_clip_markers" />
         </Menu>
 	  <Action name="auto_transition" />
+      <Action name="delete_effects" />
       <Menu name="extract_audio" ><text>Extract Audio</text>
 	  <ActionList name="audio_transcoders_list" />
       </Menu>
@@ -63,6 +80,7 @@
       <Separator />
       <Action name="locate_clip" />
       <Action name="reload_clip" />
+      <Action name="replace_clip" />
       <Action name="duplicate_clip" />
       <Action name="proxy_clip" />
       <Menu name="clip_in_timeline"><text>Clip in Timeline</text>
@@ -70,11 +88,11 @@
       </Menu>
       <Action name="clip_properties" />
       <Action name="edit_clip" />
-      <Action name="rename_clip" />
+      <Action name="renamefile" />
       <Action name="delete_clip" />
     </Menu>
 
-    <Menu name="timeline" ><text>Timeline</text>
+    <Menu name="timeline" ><text>T&amp;imeline</text>
       <Menu name="keyboard_selection" ><text>Selection</text>
 	  <Action name="select_timeline_clip" />
 	  <Action name="select_add_timeline_clip" />
@@ -104,15 +122,18 @@
             <Action name="cut_timeline_clip" />
             <Action name="delete_timeline_clip" />
             <Action name="edit_item_duration" />
+            <Action name="mix_clip" />
             <Action name="edit_item_speed" />
             <Action name="clip_split" />
             <Action name="clip_switch" />
             <Action name="clip_disable" />
             <Action name="clip_in_project_tree" />
+            <Action name="extract_clip" />
+            <Action name="save_to_bin" />
             <Action name="expand_timeline_clip" />
       </Menu>
       <Action name="grab_item" />
-      <Menu name="guide_menu" ><text>Guides</text>
+      <Menu name="guide_menu" ><text>&amp;Guides</text>
 		<Action name="add_guide" />
 		<Action name="edit_guide" />
 		<Action name="delete_guide" />
@@ -131,6 +152,7 @@
         <Action name="master_effects" />
         <Action name="insert_track" />
         <Action name="delete_track" />
+        <Action name="switch_target_stream" />
 	<Separator />
 	<Action name="select_track" />
 	<Action name="select_all_tracks" />
@@ -140,6 +162,9 @@
         <Action name="switch_all_track_lock" />
         <Action name="switch_track_target" />
         <Action name="switch_active_target" />
+        <Action name="switch_all_targets" />
+        <Action name="activate_all_targets" />
+        <Action name="restore_all_sources" />
       </Menu>
       <Separator />
       <Menu name="video_effects_menu" ><text>Add Effect</text>
@@ -164,12 +189,14 @@
       <Separator />
       <Menu name="monitor_go" ><text>Go To</text>
 	    <Action name="seek_start" />
+        <Action name="monitor_seek_guide_backward" />
 	    <Action name="monitor_seek_snap_backward" />
 	    <Action name="seek_zone_start" />
 	    <Action name="seek_clip_start" />
 	    <Action name="seek_clip_end" />
 	    <Action name="seek_zone_end" />
 	    <Action name="monitor_seek_snap_forward" />
+        <Action name="monitor_seek_guide_forward" />
 	    <Action name="seek_end" />
       </Menu>
       <Menu name="monitor_seek" ><text>Seek</text>
@@ -183,6 +210,7 @@
       <Separator />
       <Action name="mark_in" />
       <Action name="mark_out" />
+      <Action name="insert_project_tree" />
       <Separator />
       <Action name="monitor_fullscreen" />
       <Action name="monitor_multitrack" />
@@ -195,6 +223,13 @@
           <Action name="monitor_overlay_markers" />
           <Action name="monitor_overlay_audiothumb" />
       </Menu>
+      <Menu name="monitor_scaling" ><text>Preview Resolution</text>
+          <Action name="scale_no_preview" />
+          <Action name="scale_2_preview" />
+          <Action name="scale_4_preview" />
+          <Action name="scale_8_preview" />
+          <Action name="scale_16_preview" />
+      </Menu>
       <Menu name="monitor_config" ><text>Monitor config</text>
           <Action name="mlt_interlace" />
           <Action name="mlt_interpolation" />
@@ -203,22 +238,23 @@
           <Action name="mlt_mute" />
       </Menu>
       <Action name="switch_monitor" />
-      <Action name="insert_project_tree" />
-      <Action name="insert_timeline" />
     </Menu>
     <Menu name="view" noMerge="1" ><text>View</text>
-      <Menu name="layout_save_as" ><text>Save Layout As</text>
-	<Action name="save_layout1" />
-	<Action name="save_layout2" />
-	<Action name="save_layout3" />
-	<Action name="save_layout4" />
+    <Action name="fullscreen" />
+    <Separator />
+    <Action name="load_layouts" />
+    <Action name="save_layout" />
+    <Action name="manage_layout" />
+    <Menu name="dockareaoriantation" ><text>Dock Area Orientation</text>
+        <Action name="vertical_dockareaorientation" />
+        <Action name="horizontal_dockareaorientation" />
       </Menu>
-      <Action name="load_layouts" />
       <Action name="show_titlebars" />
       <Separator />
       <ActionList name="dock_actions" />
     </Menu>
     <Menu name="settings" >
+      <Action name="manage_cache" />
       <Action name="run_wizard" />
       <Menu name="qt_opengl" ><text>OpenGL Backend</text>
         <Action name="opengl_auto" />
@@ -246,6 +282,7 @@
     <Separator />
     <Action name="timeline_timecode" />
     <Separator />
+    <Action name="mix_clip" />
     <Action name="insert_to_in_point" />
     <Action name="overwrite_to_in_point" />
     <Action name="remove_extract" />
@@ -255,6 +292,8 @@
     <Separator />
     <Action name="timeline_preview_button" />
     <Action name="audiomixer_button" />
+    <Separator />
+    <Action name="subtitle_tool" />
   </ToolBar>
   <ToolBar name="extraToolBar" >
     <text>Extra Toolbar</text>

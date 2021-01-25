@@ -28,17 +28,19 @@
 #include "klocalizedstring.h"
 #include "macros.hpp"
 #include "utils/thumbnailcache.hpp"
-#include <QImage>
-#include <QScopedPointer>
 #include <mlt++/MltProducer.h>
 
 #include <set>
 
+#include <QImage>
+#include <QScopedPointer>
+#include <QThread>
+#include <QtConcurrent>
+
 CacheJob::CacheJob(const QString &binId, int thumbsCount, int inPoint, int outPoint)
-    : AbstractClipJob(CACHEJOB, binId)
-    , m_imageHeight(pCore->thumbProfile()->height())
-    , m_imageWidth(pCore->thumbProfile()->width())
-    , m_fullWidth(m_imageHeight * pCore->getCurrentDar() + 0.5)
+    : AbstractClipJob(CACHEJOB, binId, {ObjectType::BinClip, binId.toInt()})
+    , m_fullWidth(qFuzzyCompare(pCore->getCurrentSar(), 1.0) ? 0 : pCore->thumbProfile()->height() * pCore->getCurrentDar() + 0.5)
+    , m_semaphore(1)
     , m_done(false)
     , m_thumbsCount(thumbsCount)
     , m_inPoint(inPoint)
@@ -48,12 +50,13 @@ CacheJob::CacheJob(const QString &binId, int thumbsCount, int inPoint, int outPo
     if (m_fullWidth % 2 > 0) {
         m_fullWidth ++;
     }
-    m_imageHeight += m_imageHeight % 2;
-    auto item = pCore->projectItemModel()->getItemByBinId(binId);
-    Q_ASSERT(item != nullptr && item->itemType() == AbstractProjectItem::ClipItem);
     connect(this, &CacheJob::jobCanceled, [&] () {
+        if (m_done) {
+            return;
+        }
         m_done = true;
         m_clipId.clear();
+        m_semaphore.acquire();
     });
 }
 
@@ -70,6 +73,10 @@ bool CacheJob::startJob()
         return false;
     }
     m_binClip = pCore->projectItemModel()->getClipByBinID(m_clipId);
+    if (m_binClip == nullptr) {
+        // Clip was deleted
+        return false;
+    }
     if (m_binClip->clipType() != ClipType::Video && m_binClip->clipType() != ClipType::AV && m_binClip->clipType() != ClipType::Playlist) {
         // Don't create thumbnail for audio clips
         m_done = true;
@@ -81,23 +88,24 @@ bool CacheJob::startJob()
         return false;
     }
     int duration = m_outPoint > 0 ? m_outPoint - m_inPoint : (int)m_binClip->frameDuration();
-    if (m_thumbsCount * 5 > duration) {
-        m_thumbsCount = duration / 10;
-    }
     std::set<int> frames;
-    for (int i = 1; i <= m_thumbsCount; ++i) {
-        frames.insert(m_inPoint + (duration * i / m_thumbsCount));
+    int steps = qCeil(qMax(pCore->getCurrentFps(), (double)duration / m_thumbsCount));
+    int pos = m_inPoint;
+    for (int i = 1; i <= m_thumbsCount && pos <= m_inPoint + duration; ++i) {
+        frames.insert(pos);
+        pos = m_inPoint + (steps * i);
     }
     int size = (int)frames.size();
     int count = 0;
     for (int i : frames) {
-        if (m_done) {
-            break;
-        }
         emit jobProgress(100 * count / size);
         count++;
-        if (ThumbnailCache::get()->hasThumbnail(m_clipId, i)) {
+        if (m_clipId.isEmpty() || ThumbnailCache::get()->hasThumbnail(m_clipId, i)) {
             continue;
+        }
+        if (m_done || !m_semaphore.tryAcquire(1)) {
+            m_semaphore.release();
+            break;
         }
         m_prod->seek(i);
         QScopedPointer<Mlt::Frame> frame(m_prod->get_frame());
@@ -105,9 +113,10 @@ bool CacheJob::startJob()
         frame->set("top_field_first", -1);
         frame->set("rescale.interp", "nearest");
         if (frame != nullptr && frame->is_valid()) {
-            QImage result = KThumb::getFrame(frame.data(), m_imageWidth, m_imageHeight, m_fullWidth);
-            ThumbnailCache::get()->storeThumbnail(m_clipId, i, result, true);
+            QImage result = KThumb::getFrame(frame.data(), 0, 0, m_fullWidth);
+            QtConcurrent::run(ThumbnailCache::get().get(), &ThumbnailCache::storeThumbnail, m_clipId, i, result, true);
         }
+        m_semaphore.release(1);
     }
     m_done = true;
     return true;

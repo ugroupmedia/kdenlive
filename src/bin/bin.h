@@ -36,8 +36,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <QMutex>
 #include <QPushButton>
 #include <QTreeView>
+#include <QListWidget>
 #include <QUrl>
 #include <QWidget>
+#include <QActionGroup>
 
 class AbstractProjectItem;
 class BinItemDelegate;
@@ -46,6 +48,7 @@ class ClipController;
 class EffectStackModel;
 class InvalidDialog;
 class KdenliveDoc;
+class TagWidget;
 class Monitor;
 class ProjectClip;
 class ProjectFolder;
@@ -72,18 +75,23 @@ public:
     explicit MyListView(QWidget *parent = nullptr);
 
 protected:
+    void mousePressEvent(QMouseEvent *event) override;
     void focusInEvent(QFocusEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
 signals:
     void focusView();
-    void updateDragMode(ClipType::ProducerType type);
+    void updateDragMode(PlaylistState::ClipState type);
     void displayBinFrame(QModelIndex ix, int frame);
+    void processDragEnd();
+private:
+    QPoint m_startPos;
+    PlaylistState::ClipState m_dragType;
 };
 
 class MyTreeView : public QTreeView
 {
     Q_OBJECT
-    Q_PROPERTY(bool editing READ isEditing WRITE setEditing)
+    Q_PROPERTY(bool editing READ isEditing WRITE setEditing NOTIFY editingChanged)
 public:
     explicit MyTreeView(QWidget *parent = nullptr);
     void setEditing(bool edit);
@@ -108,6 +116,9 @@ signals:
     void focusView();
     void updateDragMode(PlaylistState::ClipState type);
     void displayBinFrame(QModelIndex ix, int frame);
+    void processDragEnd();
+    void selectCurrent();
+    void editingChanged();
 };
 
 class SmallJobLabel : public QPushButton
@@ -167,6 +178,8 @@ public:
 
     /** @brief Sets the document for the bin and initialize some stuff  */
     void setDocument(KdenliveDoc *project);
+    /** @brief Delete all project related data, to be called before setDocument  */
+    void cleanDocument();
 
     /** @brief Create a clip item from its xml description  */
     void createClip(const QDomElement &xml);
@@ -186,10 +199,20 @@ public:
 
     /** @brief Get a clip from it's id */
     std::shared_ptr<ProjectClip> getBinClip(const QString &id);
+    /** @brief Get a clip's name from it's id */
+    const QString getBinClipName(const QString &id) const;
+    /** @brief Returns the duration of a given clip. */
+    size_t getClipDuration(int itemId) const;
+    /** @brief Returns the state of a given clip: AudioOnly, VideoOnly, Disabled (Disabled means it has audio and video capabilities */
+    PlaylistState::ClipState getClipState(int itemId) const;
 
-    /** @brief Returns a list of selected clip ids
+    /** @brief Add markers on clip @param binId at @param positions */
+    void addClipMarker(const QString binId, QList<int> positions);
+
+    /** @brief Returns a list of selected clip ids.
+     *  @param allowSubClips: if true, will include subclip ids in the form: "master clip id/in/out"
      */
-    std::vector<QString> selectedClipsIds();
+    std::vector<QString> selectedClipsIds(bool allowSubClips = false);
 
     // Returns the selected clips
     QList<std::shared_ptr<ProjectClip>> selectedClips();
@@ -205,10 +228,14 @@ public:
     const QString getDocumentProperty(const QString &key);
 
     /** @brief Ask MLT to reload this clip's producer  */
-    void reloadClip(const QString &id, bool reloadAudio = true);
+    void reloadClip(const QString &id);
 
     /** @brief refresh monitor (if clip changed)  */
     void reloadMonitorIfActive(const QString &id);
+    /** @brief refresh monitor stream selector  */
+    void reloadMonitorStreamIfActive(const QString &id);
+    /** @brief Update timeline targets according to selected audio streams */
+    void updateTargets(const QString &id);
 
     void doMoveClip(const QString &id, const QString &newParentId);
     void doMoveFolder(const QString &id, const QString &newParentId);
@@ -245,7 +272,9 @@ public:
     /** @brief Returns true if there is no clip. */
     bool isEmpty() const;
     /** @brief Trigger reload of all clips. */
-    void reloadAllProducers();
+    void reloadAllProducers(bool reloadThumbs = true);
+    /** @brief Ensure all audio thumbs have been created */
+    void checkAudioThumbs();
     /** @brief Get usage stats for project bin. */
     void getBinStats(uint *used, uint *unused, qint64 *usedSize, qint64 *unusedSize);
     /** @brief Returns the clip properties dockwidget. */
@@ -262,19 +291,31 @@ public:
     /** @brief A bin clip changed (its effects), invalidate preview */
     void invalidateClip(const QString &binId);
     void createTwigCodeDialog();
+    /** @brief Recreate missing proxies on document opening */
+    void checkMissingProxies();
+    /** @brief Save folder state (expanded or not) */
+    void saveFolderState();
+    /** @brief Load folder state (expanded or not) */
+    void loadFolderState(QStringList foldersToExpand);
+    /** @brief gets a QList of all clips used in timeline */
+    QList<int> getUsedClipIds();
 
     // TODO refac: remove this and call directly the function in ProjectItemModel
-    void cleanup();
+    void cleanupUnused();
     void selectAll();
 
 private slots:
     void slotAddClip();
+    /** @brief Reload clip from disk */
     void slotReloadClip();
+    /** @brief Replace clip with another file */
+    void slotReplaceClip();
     /** @brief Set sorting column */
     void slotSetSorting();
     /** @brief Show/hide date column */
-    void slotShowDateColumn(bool show);
-    void slotShowDescColumn(bool show);
+    void slotShowColumn(bool show);
+    /** @brief Ensure current item is selected */
+    void ensureCurrent();
     /** @brief Go to parent folder */
     void slotBack();
     /** @brief Setup the bin view type (icon view, tree view, ...).
@@ -290,6 +331,7 @@ private slots:
     void slotItemDropped(const QStringList &ids, const QModelIndex &parent);
     void slotItemDropped(const QList<QUrl> &urls, const QModelIndex &parent);
     void slotEffectDropped(const QStringList &effectData, const QModelIndex &parent);
+    void slotTagDropped(const QString &tag, const QModelIndex &parent);
     void slotItemEdited(const QModelIndex &, const QModelIndex &, const QVector<int> &);
 
     /** @brief Reset all text and log data from info message widget. */
@@ -315,13 +357,23 @@ private slots:
     /** @brief Display a defined frame in bin clip thumbnail
      */
     void showBinFrame(QModelIndex ix, int frame);
+    /** @brief Switch a tag on/off on current selection
+     */
+    void switchTag(const QString &tag, bool add);
+    /** @brief Update project tags
+     */
+    void updateTags(QMap <QString, QString> tags);
+    void rebuildFilters(QMap <QString, QString> tags);
+    /** @brief Switch a tag on  a clip list
+     */
+    void editTags(QList <QString> allClips, const QString &tag, bool add);
 
 public slots:
     void slotRemoveInvalidClip(const QString &id, bool replace, const QString &errorMessage);
     /** @brief Reload clip thumbnail - when frame for thumbnail changed */
     void slotRefreshClipThumbnail(const QString &id);
     void slotDeleteClip();
-    void slotItemDoubleClicked(const QModelIndex &ix, const QPoint &pos);
+    void slotItemDoubleClicked(const QModelIndex &ix, const QPoint &pos, uint modifiers);
     void slotSwitchClipProperties(const std::shared_ptr<ProjectClip> &clip);
     void slotSwitchClipProperties();
     /** @brief Creates a new folder with optional name, and returns new folder's id */
@@ -343,7 +395,7 @@ public slots:
     void slotExpandUrl(const ItemInfo &info, const QString &url, QUndoCommand *command);
     /** @brief Abort all ongoing operations to prepare close. */
     void abortOperations();
-    void doDisplayMessage(const QString &text, KMessageWidget::MessageType type, const QList<QAction *> &actions = QList<QAction *>());
+    void doDisplayMessage(const QString &text, KMessageWidget::MessageType type, const QList<QAction *> &actions = QList<QAction *>(), bool showCloseButton = false, BinMessage::BinCategory messageCategory = BinMessage::BinCategory::NoMessage);
     void doDisplayMessage(const QString &text, KMessageWidget::MessageType type, const QString &logInfo);
     /** @brief Reset all clip usage to 0 */
     void resetUsageCount();
@@ -353,12 +405,13 @@ public slots:
     void droppedUrls(const QList<QUrl> &urls, const QString &folderInfo = QString());
     /** @brief Returns the effectstack of a given clip. */
     std::shared_ptr<EffectStackModel> getClipEffectStack(int itemId);
-    /** @brief Returns the duration of a given clip. */
-    size_t getClipDuration(int itemId) const;
-    /** @brief Returns the state of a given clip: AudioOnly, VideoOnly, Disabled (Disabled means it has audio and video capabilities */
-    PlaylistState::ClipState getClipState(int itemId) const;
     /** @brief Adjust project profile to current clip. */
     void adjustProjectProfileToItem();
+    /** @brief Check and propose auto adding audio tracks.
+     * @param clipId The clip whose streams have to be checked
+     * @param minimumTracksCount the number of active streams for this clip
+     */
+    void checkProjectAudioTracks(QString clipId, int minimumTracksCount);
 
 protected:
     /* This function is called whenever an item is selected to propagate signals
@@ -386,6 +439,8 @@ private:
     QAction *m_inTimelineAction;
     QAction *m_showDate;
     QAction *m_showDesc;
+    QAction *m_showRating;
+    QAction *m_sortDescend;
     /** @brief Default view type (icon, tree, ...) */
     BinViewType m_listType;
     /** @brief Default icon size for the views. */
@@ -403,6 +458,7 @@ private:
     QAction *m_openAction;
     QAction *m_editAction;
     QAction *m_reloadAction;
+    QAction *m_replaceAction;
     QAction *m_duplicateAction;
     QAction *m_locateAction;
     QAction *m_proxyAction;
@@ -413,9 +469,18 @@ private:
     QAction *m_discardCurrentClipJobs;
     QAction *m_discardPendingJobs;
     QAction *m_upAction;
+    QAction *m_tagAction;
+    QActionGroup *m_sortGroup;
     SmallJobLabel *m_infoLabel;
+    TagWidget *m_tagsWidget;
+    QMenu *m_filterMenu;
+    QActionGroup m_filterGroup;
+    QActionGroup m_filterRateGroup;
+    QActionGroup m_filterTypeGroup;
+    QToolButton *m_filterButton;
     /** @brief The info widget for failed jobs. */
     KMessageWidget *m_infoMessage;
+    BinMessage::BinCategory m_currentMessage;
     QStringList m_errorLog;
     InvalidDialog *m_invalidClipDialog;
     /** @brief Set to true if widget just gained focus (means we have to update effect stack . */
@@ -439,6 +504,7 @@ private:
     void showTitleWidget(const std::shared_ptr<ProjectClip> &clip);
     void showSlideshowWidget(const std::shared_ptr<ProjectClip> &clip);
     void processAudioThumbs();
+    void updateSortingAction(int ix);
     int wheelAccumulatedDelta;
 
 signals:
@@ -464,7 +530,13 @@ signals:
     /** @brief A clip was updated, request panel update. */
     void refreshPanel(const QString &id);
     /** @brief Upon selection, activate timeline target tracks. */
-    void setupTargets(bool hasVideo, QList <int> audioStreams);
+    void setupTargets(bool hasVideo, QMap <int, QString> audioStreams);
+    /** @brief A drag event ended, inform timeline. */
+    void processDragEnd();
+    /** @brief Delete selected markers in clip properties dialog. */
+    void deleteMarkers();
+    /** @brief Selected all markers in clip properties dialog. */
+    void selectMarkers();
 };
 
 #endif

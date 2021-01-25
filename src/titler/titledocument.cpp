@@ -132,13 +132,9 @@ QDomDocument TitleDocument::xml(QGraphicsRectItem *startv, QGraphicsRectItem *en
     QDomElement main = doc.createElement(QStringLiteral("kdenlivetitle"));
     main.setAttribute(QStringLiteral("width"), m_width);
     main.setAttribute(QStringLiteral("height"), m_height);
-// Save locale
-#ifndef Q_OS_MAC
-    const char *locale = setlocale(LC_NUMERIC, nullptr);
-#else
-    const char *locale = setlocale(LC_NUMERIC_MASK, nullptr);
-#endif
-    main.setAttribute(QStringLiteral("LC_NUMERIC"), locale);
+
+    // Save locale. Since 20.08, we always use the C locale for serialising.
+    main.setAttribute(QStringLiteral("LC_NUMERIC"), "C");
     doc.appendChild(main);
     QTextCursor cur;
     QTextBlockFormat format;
@@ -324,7 +320,7 @@ QColor TitleDocument::getBackgroundColor() const
     QColor color(0, 0, 0, 0);
     if (m_scene) {
         QList<QGraphicsItem *> items = m_scene->items();
-        for (auto item : items) {
+        for (auto item : qAsConst(items)) {
             if ((int)item->zValue() == -1100) {
                 color = static_cast<QGraphicsRectItem *>(item)->brush().color();
                 return color;
@@ -637,7 +633,7 @@ int TitleDocument::loadFromXml(const QDomDocument &doc, QGraphicsRectItem *start
                 QColor color = QColor(stringToColor(itemNode.attributes().namedItem(QStringLiteral("color")).nodeValue()));
                 // color.setAlpha(itemNode.attributes().namedItem("alpha").nodeValue().toInt());
                 QList<QGraphicsItem *> sceneItems = m_scene->items();
-                for (auto sceneItem : sceneItems) {
+                for (auto sceneItem : qAsConst(sceneItems)) {
                     if ((int)sceneItem->zValue() == -1100) {
                         static_cast<QGraphicsRectItem *>(sceneItem)->setBrush(QBrush(color));
                         break;

@@ -25,6 +25,7 @@ import QtQuick.Controls 1.4
 import QtQuick.Controls.Styles 1.4
 import QtQuick.Window 2.2
 import QtQml.Models 2.11
+import com.enums 1.0
 
 Rectangle {
     id: listRoot
@@ -74,7 +75,7 @@ Rectangle {
                 id: showVideo
                 visible: isEffectList
                 iconName: "kdenlive-show-video"
-                iconSource: 'qrc:///pics/kdenlive-show-video.svgz'
+                iconSource: 'image://icon/kdenlive-show-video'
                 checkable:true
                 exclusiveGroup: filterGroup
                 tooltip: i18n("Show all video effects")
@@ -86,7 +87,7 @@ Rectangle {
                 id: showAudio
                 visible: isEffectList
                 iconName: "kdenlive-show-audio"
-                iconSource: 'qrc:///pics/kdenlive-show-audio.svgz'
+                iconSource: 'image://icon/kdenlive-show-audio'
                 checkable:true
                 exclusiveGroup: filterGroup
                 tooltip: i18n("Show all audio effects")
@@ -256,9 +257,10 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: assetDelegate.isItem
                         property bool isFavorite: model == undefined || model.favorite === undefined ? false : model.favorite
+                        property bool isCustom: model == undefined ? false : model.type == AssetType.Custom || model.type == AssetType.CustomAudio
                         height: parent.height * 0.8
                         width: height
-                        source: 'image://asseticon/' + styleData.value
+                        source: assetText.text == '' ? '' : 'image://asseticon/' + assetText.text + '/' + model.type
                     }
                     Label {
                         id: assetText
@@ -281,12 +283,14 @@ Rectangle {
                             sel.setCurrentIndex(styleData.index, ItemSelectionModel.ClearAndSelect)
                             if (mouse.button === Qt.LeftButton) {
                                 drag.target = parent
-                                parent.grabToImage(function(result) {
+                                // grabToImage does not work on QQuickWidget from AssetListWidget. We should use QQuickView + QWidget::createWindowContainer
+                                /*parent.grabToImage(function(result) {
                                     parent.Drag.imageSource = result.url
-                                })
+                                })*/
                             } else {
                                 drag.target = undefined
                                 assetContextMenu.isItemFavorite = assetThumb.isFavorite
+                                assetContextMenu.isCustom = assetThumb.isCustom
                                 assetContextMenu.popup()
                                 mouse.accepted = false
                             }
@@ -311,20 +315,36 @@ Rectangle {
             Menu {
                 id: assetContextMenu
                 property bool isItemFavorite
-                property bool isDisplayed: false
+                property bool isCustom: false
                 MenuItem {
-                    id: favMenu
                     text: assetContextMenu.isItemFavorite ? i18n("Remove from favorites") : i18n("Add to favorites")
-                    property url thumbSource
                     onTriggered: {
                         assetlist.setFavorite(sel.currentIndex, !assetContextMenu.isItemFavorite)
                     }
                 }
-                onAboutToShow: {
-                    isDisplayed = true;
+                MenuItem {
+                    id: removeMenu
+                    text: i18n("Delete custom effect")
+                    visible: isEffectList && assetContextMenu.isCustom
+                    onTriggered: {
+                        assetlist.deleteCustomEffect(sel.currentIndex)
+                    }
                 }
-                onAboutToHide: {
-                    isDisplayed = false;
+                MenuItem {
+                    id: reloadMenu
+                    text: i18n("Reload custom effect")
+                    visible: isEffectList && assetContextMenu.isCustom
+                    onTriggered: {
+                        assetlist.reloadCustomEffectIx(sel.currentIndex)
+                    }
+                }
+                MenuItem {
+                    id: editMenu
+                    text: i18n("Edit Info")
+                    visible: isEffectList && assetContextMenu.isCustom
+                    onTriggered: {
+                        assetlist.editCustomEffectInfo(sel.currentIndex)
+                    }
                 }
             }
 

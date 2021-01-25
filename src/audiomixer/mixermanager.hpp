@@ -36,7 +36,6 @@ class MixerWidget;
 class QHBoxLayout;
 class TimelineItemModel;
 class QScrollArea;
-class QFrame;
 
 class MixerManager : public QWidget
 {
@@ -49,9 +48,11 @@ public:
     void deregisterTrack(int tid);
     void setModel(std::shared_ptr<TimelineItemModel> model);
     void cleanup();
-    /** @brief Connect the mixer widgets to the correspondant filters */
+    /** @brief Connect the mixer widgets to the correspondent filters */
     void connectMixer(bool doConnect);
     void collapseMixers();
+    /** @brief Pause/unpause audio monitoring */
+    void pauseMonitoring(bool pause);
 
 public slots:
     void recordStateChanged(int tid, bool recording);
@@ -64,6 +65,8 @@ signals:
     void recordAudio(int tid);
     void purgeCache();
     void clearMixers();
+    void updateRecVolume();
+    void showEffectStack(int tid);
 
 protected:
     std::unordered_map<int, std::shared_ptr<MixerWidget>> m_mixers;
@@ -77,7 +80,6 @@ private:
     QHBoxLayout *m_masterBox;
     QHBoxLayout *m_channelsLayout;
     QScrollArea *m_channelsBox;
-    QFrame *m_line;
     int m_lastFrame;
     bool m_visibleMixerManager;
     int m_expandedWidth;

@@ -15,15 +15,45 @@ the Free Software Foundation, either version 3 of the License, or
 #include "mainwindow.h"
 #include "mlt_config.h"
 #include <KUrlRequesterDialog>
-#include <config-kdenlive.h>
 #include <klocalizedstring.h>
 #include <QtConcurrent>
 
-#include "kdenlive_debug.h"
-#include <QFile>
-#include <QStandardPaths>
+#include <lib/localeHandling.h>
+#include <locale.h>
 #include <mlt++/MltFactory.h>
 #include <mlt++/MltRepository.h>
+
+static void mlt_log_handler(void *service, int mlt_level, const char *format, va_list args)
+{
+    if (mlt_level > mlt_log_get_level())
+        return;
+    QString message;
+    mlt_properties properties = service? MLT_SERVICE_PROPERTIES((mlt_service) service) : NULL;
+    if (properties) {
+        char *mlt_type = mlt_properties_get(properties, "mlt_type");
+        char *service_name = mlt_properties_get(properties, "mlt_service");
+        char *resource = mlt_properties_get(properties, "resource");
+        char *id = mlt_properties_get(properties, "id");
+        if (!resource || resource[0] != '<' || resource[strlen(resource) - 1] != '>')
+            mlt_type = mlt_properties_get(properties, "mlt_type" );
+        if (service_name)
+            message = QString("[%1 %2 %3] ").arg(mlt_type, service_name, id);
+        else
+            message = QString::asprintf("[%s %p] ", mlt_type, service);
+        if (resource)
+            message.append(QString("\"%1\" ").arg(resource));
+        message.append(QString::vasprintf(format, args));
+        message.replace('\n', "");
+        if (!strcmp(mlt_type, "filter")) {
+            pCore->processInvalidFilter(service_name, id, message);
+        }
+    } else {
+        message = QString::vasprintf(format, args);
+        message.replace('\n', "");
+    }
+    qDebug() << "MLT:" << message;
+}
+
 
 std::unique_ptr<MltConnection> MltConnection::m_self;
 MltConnection::MltConnection(const QString &mltPath)
@@ -31,7 +61,17 @@ MltConnection::MltConnection(const QString &mltPath)
     // Disable VDPAU that crashes in multithread environment.
     // TODO: make configurable
     setenv("MLT_NO_VDPAU", "1", 1);
+
+    // After initialising the MLT factory, set the locale back from user default to C
+    // to ensure numbers are always serialised with . as decimal point.
     m_repository = std::unique_ptr<Mlt::Repository>(Mlt::Factory::init());
+
+#ifdef Q_OS_FREEBSD
+    auto locale = strdup(setlocale(MLT_LC_CATEGORY, nullptr));
+#else
+    auto locale = strdup(std::setlocale(MLT_LC_CATEGORY, nullptr));
+#endif
+
     locateMeltAndProfilesPath(mltPath);
 
     // Retrieve the list of available producers.
@@ -43,14 +83,15 @@ MltConnection::MltConnection(const QString &mltPath)
         producersList << producers->get_name(i);
     }
     KdenliveSettings::setProducerslist(producersList);
-
+    mlt_log_set_level(MLT_LOG_WARNING);
+    mlt_log_set_callback(mlt_log_handler);
     refreshLumas();
 }
 
 void MltConnection::construct(const QString &mltPath)
 {
     if (MltConnection::m_self) {
-        qDebug() << "DEBUG: Warning : trying to open a second mlt connection";
+        qWarning() << "Trying to open a 2nd mlt connection";
         return;
     }
     MltConnection::m_self.reset(new MltConnection(mltPath));
@@ -162,7 +203,6 @@ void MltConnection::locateMeltAndProfilesPath(const QString &mltPath)
             }
         }
     }
-    qCDebug(KDENLIVE_LOG) << "MLT profiles path: " << KdenliveSettings::mltpath();
     // Parse again MLT profiles to build a list of available video formats
     if (profilesList.isEmpty()) {
         locateMeltAndProfilesPath();
@@ -183,11 +223,11 @@ void MltConnection::refreshLumas()
     QStringList customLumas = QStandardPaths::locateAll(QStandardPaths::AppDataLocation, QStringLiteral("lumas"), QStandardPaths::LocateDirectory);
     customLumas.append(QString(mlt_environment("MLT_DATA")) + QStringLiteral("/lumas"));
     QStringList allImagefiles;
-    for (const QString &folder : customLumas) {
+    for (const QString &folder : qAsConst(customLumas)) {
         QDir topDir(folder);
         QStringList folders = topDir.entryList(QDir::AllDirs | QDir::NoDotAndDotDot);
         QString format;
-        for (const QString &f : folders) {
+        for (const QString &f : qAsConst(folders)) {
             QStringList imagefiles;
             QDir dir(topDir.absoluteFilePath(f));
             if (f == QLatin1String("HD")) {
@@ -199,7 +239,7 @@ void MltConnection::refreshLumas()
             if (MainWindow::m_lumaFiles.contains(format)) {
                 imagefiles = MainWindow::m_lumaFiles.value(format);
             }
-            for (const QString &fname : filesnames) {
+            for (const QString &fname : qAsConst(filesnames)) {
                 imagefiles.append(dir.absoluteFilePath(fname));
             }
             MainWindow::m_lumaFiles.insert(format, imagefiles);

@@ -43,9 +43,10 @@
 #include <KLineEdit>
 #include <mlt++/Mlt.h>
 
-SpeedJob::SpeedJob(const QString &binId, double speed, QString destUrl)
-    : MeltJob(binId, SPEEDJOB, false, -1, -1)
+SpeedJob::SpeedJob(const QString &binId, double speed, bool warp_pitch, QString destUrl)
+    : MeltJob(binId, {ObjectType::BinClip, binId.toInt()}, SPEEDJOB, false, -1, -1)
     , m_speed(speed)
+    , m_warp_pitch(warp_pitch)
     , m_destUrl(std::move(destUrl))
 {
     m_requiresFilter = false;
@@ -61,14 +62,23 @@ void SpeedJob::configureConsumer()
     m_consumer = std::make_unique<Mlt::Consumer>(*m_profile.get(), "xml", m_destUrl.toUtf8().constData());
     m_consumer->set("terminate_on_pause", 1);
     m_consumer->set("title", "Speed Change");
-    m_consumer->set("real_time", -KdenliveSettings::mltthreads());
+    m_consumer->set("real_time", -1);
 }
 
 void SpeedJob::configureProducer()
 {
     if (!qFuzzyCompare(m_speed, 1.0)) {
         QString resource = m_producer->get("resource");
-        m_producer = std::make_unique<Mlt::Producer>(*m_profile.get(), "timewarp", QStringLiteral("%1:%2").arg(QString::fromStdString(std::to_string(m_speed))).arg(resource).toUtf8().constData());
+        m_producer = std::make_unique<Mlt::Producer>(*m_profile.get(), "timewarp", QStringLiteral("%1:%2").arg(QString::fromStdString(std::to_string(m_speed)), resource).toUtf8().constData());
+        if (m_in > 0) {
+            m_in /= m_speed;
+        }
+        if (m_out > 0) {
+            m_out /= m_speed;
+        }
+        if (m_warp_pitch) {
+            m_producer->set("warp_pitch", 1);
+        }
     }
 }
 
@@ -85,7 +95,7 @@ int SpeedJob::prepareJob(const std::shared_ptr<JobManager> &ptr, const std::vect
     d.setLayout(l);
     QLabel labUrl(&d);
     KUrlRequester fileUrl(&d);
-    auto binClip = pCore->projectItemModel()->getClipByBinID(binIds.front());
+    auto binClip = pCore->projectItemModel()->getClipByBinID(binIds.front().section(QLatin1Char('/'), 0, 0));
     QDir folder = QFileInfo(binClip->url()).absoluteDir();
     folder.mkpath(i18n("Speed Change"));
     folder.cd(i18n("Speed Change"));
@@ -110,10 +120,13 @@ int SpeedJob::prepareJob(const std::shared_ptr<JobManager> &ptr, const std::vect
     speedInput.setSuffix(QLatin1String("%"));
     speedInput.setFocus();
     speedInput.selectAll();
+    QCheckBox cb(i18n("Pitch compensation"), &d);
+    cb.setChecked(true);
     l->addWidget(&labUrl);
     l->addWidget(&fileUrl);
     l->addWidget(&lab);
     l->addWidget(&speedInput);
+    l->addWidget(&cb);
     l->addWidget(&buttonBox);
     d.connect(&buttonBox, &QDialogButtonBox::rejected, &d, &QDialog::reject);
     d.connect(&buttonBox, &QDialogButtonBox::accepted, &d, &QDialog::accept);
@@ -121,6 +134,7 @@ int SpeedJob::prepareJob(const std::shared_ptr<JobManager> &ptr, const std::vect
         return -1;
     }
     double speed = speedInput.value();
+    bool warp_pitch = cb.isChecked();
     std::unordered_map<QString, QString> destinations; // keys are binIds, values are path to target files
     for (const auto &binId : binIds) {
         QString mltfile;
@@ -129,7 +143,7 @@ int SpeedJob::prepareJob(const std::shared_ptr<JobManager> &ptr, const std::vect
             mltfile = fileUrl.url().toLocalFile();
         } else {
             QDir dir(fileUrl.url().toLocalFile());
-            binClip = pCore->projectItemModel()->getClipByBinID(binId);
+            binClip = pCore->projectItemModel()->getClipByBinID(binId.section(QLatin1Char('/'), 0, 0));
             mltfile = QFileInfo(binClip->url()).fileName().section(QLatin1Char('.'), 0, -2);
             mltfile.append(QString("-%1.mlt").arg(QString::number((int)speed)));
             mltfile = dir.absoluteFilePath(mltfile);
@@ -151,12 +165,12 @@ int SpeedJob::prepareJob(const std::shared_ptr<JobManager> &ptr, const std::vect
     // Now we have to create the jobs objects. This is trickier than usual, since the parameters are different for each job (each clip has its own
     // destination). We have to construct a lambda that does that.
 
-    auto createFn = [dest = std::move(destinations), fSpeed = speed / 100.0](const QString &id) { return std::make_shared<SpeedJob>(id, fSpeed, dest.at(id)); };
+    auto createFn = [dest = std::move(destinations), fSpeed = speed / 100.0, warp_pitch](const QString &id) { return std::make_shared<SpeedJob>(id, fSpeed, warp_pitch, dest.at(id)); };
 
     // We are now all set to create the job. Note that we pass all the parameters directly through the lambda, hence there are no extra parameters to the
     // function
     using local_createFn_t = std::function<std::shared_ptr<SpeedJob>(const QString &)>;
-    return ptr->startJob<SpeedJob>(binIds, parentId, std::move(undoString), local_createFn_t(std::move(createFn)));
+    return emit ptr->startJob<SpeedJob>(binIds, parentId, std::move(undoString), local_createFn_t(std::move(createFn)));
 }
 
 bool SpeedJob::commitResult(Fun &undo, Fun &redo)

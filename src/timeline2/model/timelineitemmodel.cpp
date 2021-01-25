@@ -23,6 +23,7 @@
 #include "audiomixer/mixermanager.hpp"
 #include "assets/keyframes/model/keyframemodel.hpp"
 #include "bin/model/markerlistmodel.hpp"
+#include "bin/model/subtitlemodel.hpp"
 #include "clipmodel.hpp"
 #include "compositionmodel.hpp"
 #include "core.h"
@@ -95,7 +96,7 @@ QModelIndex TimelineItemModel::index(int row, int column, const QModelIndex &par
             // Invalid index requested
             Q_ASSERT(false);
         }
-    } else if (row < getTracksCount() && row >= 0) {
+    } else if (row < (int)m_allTracks.size() && row >= 0) {
         // Get sort order
         // row = getTracksCount() - 1 - row;
         auto it = m_allTracks.cbegin();
@@ -129,6 +130,13 @@ QModelIndex TimelineItemModel::makeCompositionIndexFromID(int compoId) const
     Q_ASSERT(m_allCompositions.count(compoId) > 0);
     int trackId = m_allCompositions.at(compoId)->getCurrentTrackId();
     return index(getTrackById_const(trackId)->getRowfromComposition(compoId), 0, makeTrackIndexFromID(trackId));
+}
+
+void TimelineItemModel::subtitleChanged(int subId, const QVector<int> roles)
+{
+    Q_ASSERT(m_subtitleModel != nullptr);
+    Q_ASSERT(m_allSubtitles.count(subId) > 0);
+    m_subtitleModel->updateSub(subId, roles);
 }
 
 QModelIndex TimelineItemModel::makeTrackIndexFromID(int trackId) const
@@ -176,7 +184,7 @@ int TimelineItemModel::rowCount(const QModelIndex &parent) const
         }
         return getTrackClipsCount(id) + getTrackCompositionsCount(id);
     }
-    return getTracksCount();
+    return (int)m_allTracks.size();
 }
 
 int TimelineItemModel::columnCount(const QModelIndex &parent) const
@@ -193,14 +201,18 @@ QHash<int, QByteArray> TimelineItemModel::roleNames() const
     roles[ServiceRole] = "mlt_service";
     roles[BinIdRole] = "binId";
     roles[TrackIdRole] = "trackId";
+    roles[TagRole] = "tag";
     roles[FakeTrackIdRole] = "fakeTrackId";
     roles[FakePositionRole] = "fakePosition";
     roles[StartRole] = "start";
+    roles[MixRole] = "mixDuration";
+    roles[MixCutRole] = "mixCut";
     roles[DurationRole] = "duration";
     roles[MaxDurationRole] = "maxDuration";
     roles[MarkersRole] = "markers";
     roles[KeyframesRole] = "keyframeModel";
     roles[ShowKeyframesRole] = "showKeyframes";
+    roles[PlaylistStateRole] = "clipState";
     roles[StatusRole] = "clipStatus";
     roles[TypeRole] = "clipType";
     roles[InPointRole] = "in";
@@ -210,6 +222,9 @@ QHash<int, QByteArray> TimelineItemModel::roleNames() const
     roles[IsDisabledRole] = "disabled";
     roles[IsAudioRole] = "audio";
     roles[AudioChannelsRole] = "audioChannels";
+    roles[AudioStreamRole] = "audioStream";
+    roles[AudioMultiStreamRole] = "multiStream";
+    roles[AudioStreamIndexRole] = "audioStreamIndex";
     roles[IsCompositeRole] = "composite";
     roles[IsLockedRole] = "locked";
     roles[FadeInRole] = "fadeIn";
@@ -260,19 +275,7 @@ QVariant TimelineItemModel::data(const QModelIndex &index, int role) const
         // TODO
         case NameRole:
         case Qt::DisplayRole: {
-            QString result = clip->getProperty("kdenlive:clipname");
-            if (result.isEmpty()) {
-                result = clip->getProperty("kdenlive:originalurl");
-                if (result.isEmpty()) {
-                    result = clip->getProperty("resource");
-                }
-                if (!result.isEmpty()) {
-                    result = QFileInfo(result).fileName();
-                } else {
-                    result = clip->getProperty("mlt_service");
-                }
-            }
-            return result;
+            return clip->clipName();
         }
         case ResourceRole: {
             QString result = clip->getProperty("resource");
@@ -280,6 +283,9 @@ QVariant TimelineItemModel::data(const QModelIndex &index, int role) const
                 result = clip->getProperty("mlt_service");
             }
             return result;
+        }
+        case StatusRole: {
+            return clip->clipStatus();
         }
         case FakeTrackIdRole:
             return clip->getFakeTrackId();
@@ -294,6 +300,12 @@ QVariant TimelineItemModel::data(const QModelIndex &index, int role) const
             break;
         case AudioChannelsRole:
             return clip->audioChannels();
+        case AudioStreamRole:
+            return clip->audioStream();
+        case AudioMultiStreamRole:
+            return clip->audioMultiStream();
+        case AudioStreamIndexRole:
+            return clip->audioStreamIndex();
         case HasAudio:
             return clip->audioEnabled();
         case IsAudioRole:
@@ -308,7 +320,7 @@ QVariant TimelineItemModel::data(const QModelIndex &index, int role) const
         case KeyframesRole: {
             return QVariant::fromValue<KeyframeModel *>(clip->getKeyframeModel());
         }
-        case StatusRole:
+        case PlaylistStateRole:
             return QVariant::fromValue(clip->clipState());
         case TypeRole:
             return QVariant::fromValue(clip->clipType());
@@ -332,6 +344,10 @@ QVariant TimelineItemModel::data(const QModelIndex &index, int role) const
             return clip->fadeIn();
         case FadeOutRole:
             return clip->fadeOut();
+        case MixRole:
+            return clip->getMixDuration();
+        case MixCutRole:
+            return clip->getMixCutPosition();
         case ReloadThumbRole:
             return clip->forceThumbReload;
         case PositionOffsetRole:
@@ -342,6 +358,8 @@ QVariant TimelineItemModel::data(const QModelIndex &index, int role) const
             return clip->isGrabbed();
         case SelectedRole:
             return clip->selected;
+        case TagRole:
+            return clip->clipTag();
         default:
             break;
         }
@@ -373,7 +391,7 @@ QVariant TimelineItemModel::data(const QModelIndex &index, int role) const
             }
             int height = getTrackById_const(id)->getProperty("kdenlive:trackheight").toInt();
             // qDebug() << "DATA yielding height" << height;
-            return (height > 0 ? height : 60);
+            return (height > 0 ? height : KdenliveSettings::trackheight());
         }
         case ThumbsFormatRole:
             return getTrackById_const(id)->getProperty("kdenlive:thumbs_format").toInt();
@@ -442,19 +460,60 @@ QVariant TimelineItemModel::data(const QModelIndex &index, int role) const
     return QVariant();
 }
 
+void TimelineItemModel::setTrackName(int trackId, const QString &text)
+{
+    QWriteLocker locker(&m_lock);
+    const QString &currentName = getTrackProperty(trackId, QStringLiteral("kdenlive:track_name")).toString();
+    if (text == currentName) {
+        return;
+    }
+    Fun undo_lambda = [this, trackId, currentName]() {
+        setTrackProperty(trackId, QStringLiteral("kdenlive:track_name"), currentName);
+        return true;
+    };
+    Fun redo_lambda = [this, trackId, text]() {
+        setTrackProperty(trackId, QStringLiteral("kdenlive:track_name"), text);
+        return true;
+    };
+    redo_lambda();
+    PUSH_UNDO(undo_lambda, redo_lambda, i18n("Rename Track"));
+}
+
+void TimelineItemModel::hideTrack(int trackId, const QString state)
+{
+    QWriteLocker locker(&m_lock);
+    QString previousState = getTrackProperty(trackId, QStringLiteral("hide")).toString();
+    Fun undo_lambda = [this, trackId, previousState]() {
+        setTrackProperty(trackId, QStringLiteral("hide"), previousState);
+        return true;
+    };
+    Fun redo_lambda = [this, trackId, state]() {
+        setTrackProperty(trackId, QStringLiteral("hide"), state);
+        return true;
+    };
+    redo_lambda();
+    PUSH_UNDO(undo_lambda, redo_lambda, state == QLatin1String("3") ? i18n("Hide Track") : i18n("Enable Track"));
+}
+
 void TimelineItemModel::setTrackProperty(int trackId, const QString &name, const QString &value)
 {
     std::shared_ptr<TrackModel> track = getTrackById(trackId);
     track->setProperty(name, value);
     QVector<int> roles;
+    bool updateMultiTrack = false;
     if (name == QLatin1String("kdenlive:track_name")) {
         roles.push_back(NameRole);
+        if (!track->isAudioTrack()) {
+            updateMultiTrack = true;
+        }
     } else if (name == QLatin1String("kdenlive:locked_track")) {
         roles.push_back(IsLockedRole);
     } else if (name == QLatin1String("hide")) {
         roles.push_back(IsDisabledRole);
         if (!track->isAudioTrack()) {
+            pCore->invalidateItem(ObjectId(ObjectType::TimelineTrack, trackId));
             pCore->requestMonitorRefresh();
+            updateMultiTrack = true;
         }
     } else if (name == QLatin1String("kdenlive:timeline_active")) {
         roles.push_back(TrackActiveRole);
@@ -468,6 +527,9 @@ void TimelineItemModel::setTrackProperty(int trackId, const QString &name, const
     if (!roles.isEmpty()) {
         QModelIndex ix = makeTrackIndexFromID(trackId);
         emit dataChanged(ix, ix, roles);
+        if (updateMultiTrack) {
+            emit trackVisibilityChanged();
+        }
     }
 }
 
@@ -483,7 +545,7 @@ void TimelineItemModel::importTrackEffects(int tid, std::weak_ptr<Mlt::Service> 
 {
     std::shared_ptr<TrackModel> track = getTrackById(tid);
     std::shared_ptr<Mlt::Tractor> destination = track->getTrackService();
-    // Audio mixer effects are attached to the Tractor service, while track effects are attached to first playlist service 
+    // Audio mixer effects are attached to the Tractor service, while track effects are attached to first playlist service
     if (auto ptr = service.lock()) {
         for (int i = 0; i < ptr->filter_count(); i++) {
             std::unique_ptr<Mlt::Filter> filter(ptr->filter(i));
@@ -570,22 +632,25 @@ void TimelineItemModel::notifyChange(const QModelIndex &topleft, const QModelInd
 
 void TimelineItemModel::buildTrackCompositing(bool rebuild)
 {
+    bool isMultiTrack = pCore->enableMultiTrack(false);
     auto it = m_allTracks.cbegin();
+    QScopedPointer<Mlt::Service> service(m_tractor->field());
     QScopedPointer<Mlt::Field> field(m_tractor->field());
     field->lock();
     // Make sure all previous track compositing is removed
     if (rebuild) {
-        QScopedPointer<Mlt::Service> service(new Mlt::Service(field->get_service()));
         while (service != nullptr && service->is_valid()) {
             if (service->type() == transition_type) {
                 Mlt::Transition t((mlt_transition)service->get_service());
+                service.reset(service->producer());
                 if (t.get_int("internal_added") == 237) {
                     // remove all compositing transitions
                     field->disconnect_service(t);
                     t.disconnect_all_producers();
                 }
+            } else {
+                service.reset(service->producer());
             }
-            service.reset(service->producer());
         }
     }
     QString composite = TransitionsRepository::get()->getCompositingTransition();
@@ -600,23 +665,28 @@ void TimelineItemModel::buildTrackCompositing(bool rebuild)
             std::unique_ptr<Mlt::Transition> transition = TransitionsRepository::get()->getTransition(composite);
             transition->set("internal_added", 237);
             transition->set("always_active", 1);
-            field->plant_transition(*transition, 0, trackPos);
             transition->set_tracks(0, trackPos);
+            field->plant_transition(*transition.get(), 0, trackPos);
         } else if ((*it)->isAudioTrack()) {
             // audio mix
             std::unique_ptr<Mlt::Transition> transition = TransitionsRepository::get()->getTransition(QStringLiteral("mix"));
             transition->set("internal_added", 237);
             transition->set("always_active", 1);
+            transition->set("accepts_blanks", 1);
             transition->set("sum", 1);
-            field->plant_transition(*transition, 0, trackPos);
             transition->set_tracks(0, trackPos);
+            field->plant_transition(*transition.get(), 0, trackPos);
             if (hasMixer) {
                 pCore->mixer()->registerTrack((*it)->getId(), (*it)->getTrackService(), getTrackTagById((*it)->getId()));
+                connect(pCore->mixer(), &MixerManager::showEffectStack, this, &TimelineItemModel::showTrackEffectStack);
             }
         }
         ++it;
     }
     field->unlock();
+    if (isMultiTrack) {
+        pCore->enableMultiTrack(true);
+    }
     if (composite.isEmpty()) {
         pCore->displayMessage(i18n("Could not setup track compositing, check your install"), MessageType::ErrorMessage);
     }

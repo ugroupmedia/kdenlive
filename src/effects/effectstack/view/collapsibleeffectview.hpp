@@ -82,16 +82,22 @@ public:
     void setActiveKeyframe(int kf);
     /** @brief Returns true if effect can be moved (false for speed effect). */
     bool isMovable() const;
+    /** @brief Returns the effect in xml format for saving. */
+    QDomDocument toXml() const;
+    /** @brief Update monitor scene depending on effect enabled state. */
+    void updateScene();
 
 public slots:
     void slotSyncEffectsPos(int pos);
     void slotDisable(bool disable);
     void slotResetEffect();
     void importKeyframes(const QString &keyframes);
-    void slotActivateEffect(QModelIndex ix);
+    void slotActivateEffect(bool active);
     void updateHeight();
     /** @brief Should we block wheel event (if parent is a view with scrollbar) */
     void blockWheenEvent(bool block);
+    /** @brief Switch between collapsed/expanded state */
+    void switchCollapsed(int row);
 
 private slots:
     void setWidgetHeight(qreal value);
@@ -163,6 +169,8 @@ signals:
     void startDrag(QPixmap, std::shared_ptr<EffectItemModel> effectModel);
     void activateEffect(std::shared_ptr<EffectItemModel> effectModel);
     void refresh();
+    /** @brief Requests saving the full effect stack. */
+    void saveStack();
 };
 
 #endif

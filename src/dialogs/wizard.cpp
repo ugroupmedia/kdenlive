@@ -49,7 +49,13 @@
 #include <QStandardPaths>
 #include <QTemporaryFile>
 #include <QTimer>
+#include <QApplication>
+#include <kio_version.h>
 #include <QXmlStreamWriter>
+
+#if KIO_VERSION >= QT_VERSION_CHECK(5,71,0)
+#include <KIO/OpenUrlJob>
+#endif
 
 // Recommended MLT version
 const int mltVersionMajor = MLT_MIN_MAJOR_VERSION;
@@ -104,7 +110,6 @@ Wizard::Wizard(bool autoClose, bool appImageCheck, QWidget *parent)
     m_standard.setupUi(page2);*/
     setButtonText(QWizard::CancelButton, i18n("Abort"));
     setButtonText(QWizard::FinishButton, i18n("OK"));
-
     slotCheckMlt();
     if (autoClose) {
         // This is a first run instance, check HW encoders
@@ -153,7 +158,7 @@ Wizard::Wizard(bool autoClose, bool appImageCheck, QWidget *parent)
         m_startLayout->addWidget(cbn);
         cbn->setChecked(KdenliveSettings::nvencEnabled());
         QPushButton *pb = new QPushButton(i18n("Check hardware acceleration"), this);
-        connect(pb, &QPushButton::clicked, [&, cb, cbn, pb]() {
+        connect(pb, &QPushButton::clicked, this, [&, cb, cbn, pb]() {
             testHwEncoders();
             pb->setEnabled(false);
             cb->setChecked(KdenliveSettings::vaapiEnabled());
@@ -332,17 +337,29 @@ void Wizard::slotUpdateCaptureParameters()
                                                      << QString::number(profileInfo->height()) << QString::number(profileInfo->frame_rate_num())
                                                      << QString::number(profileInfo->frame_rate_den()));
     }
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     QStringList pixelformats = formats.split('>', QString::SkipEmptyParts);
+#else
+    QStringList pixelformats = formats.split('>', Qt::SkipEmptyParts);
+#endif
     QString itemSize;
     QString pixelFormat;
     QStringList itemRates;
     for (int i = 0; i < pixelformats.count(); ++i) {
         QString format = pixelformats.at(i).section(QLatin1Char(':'), 0, 0);
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
         QStringList sizes = pixelformats.at(i).split(':', QString::SkipEmptyParts);
+#else
+        QStringList sizes = pixelformats.at(i).split(':', Qt::SkipEmptyParts);
+#endif
         pixelFormat = sizes.takeFirst();
         for (int j = 0; j < sizes.count(); ++j) {
             itemSize = sizes.at(j).section(QLatin1Char('='), 0, 0);
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
             itemRates = sizes.at(j).section(QLatin1Char('='), 1, 1).split(QLatin1Char(','), QString::SkipEmptyParts);
+#else
+            itemRates = sizes.at(j).section(QLatin1Char('='), 1, 1).split(QLatin1Char(','), Qt::SkipEmptyParts);
+#endif
             for (int k = 0; k < itemRates.count(); ++k) {
                 QString formatDescription =
                     QLatin1Char('[') + format + QStringLiteral("] ") + itemSize + QStringLiteral(" (") + itemRates.at(k) + QLatin1Char(')');
@@ -453,6 +470,10 @@ void Wizard::checkMltComponents()
             // MLT >= 6.6.0 and SDL2 module
             KdenliveSettings::setSdlAudioBackend(QStringLiteral("sdl2_audio"));
             KdenliveSettings::setAudiobackend(QStringLiteral("sdl2_audio"));
+#if defined(Q_OS_WIN)
+            // Use wasapi by default on Windows
+            KdenliveSettings::setAudiodrivername(QStringLiteral("wasapi"));
+#endif
         } else if (consumersItemList.contains(QStringLiteral("sdl_audio"))) {
             // MLT < 6.6.0
             KdenliveSettings::setSdlAudioBackend(QStringLiteral("sdl_audio"));
@@ -547,7 +568,7 @@ void Wizard::checkMissingCodecs()
     // can also override profiles installed by KNewStuff
     QStringList requiredACodecs;
     QStringList requiredVCodecs;
-    for (const QString &filename : profilesList) {
+    for (const QString &filename : qAsConst(profilesList)) {
         QDomDocument doc;
         QFile file(filename);
         doc.setContent(&file, false);
@@ -610,24 +631,24 @@ void Wizard::checkMissingCodecs()
     }*/
 }
 
-void Wizard::slotCheckPrograms()
+void Wizard::slotCheckPrograms(QString &infos, QString &warnings)
 {
     bool allIsOk = true;
 
     // Check first in same folder as melt exec
-    const QStringList mltpath = QStringList() << QFileInfo(KdenliveSettings::rendererpath()).canonicalPath();
+    const QStringList mltpath({QFileInfo(KdenliveSettings::rendererpath()).canonicalPath(), qApp->applicationDirPath()});
     QString exepath;
     if (KdenliveSettings::ffmpegpath().isEmpty() || !QFileInfo::exists(KdenliveSettings::ffmpegpath())) {
-        exepath = QStandardPaths::findExecutable(QStringLiteral("ffmpeg%1").arg(FFMPEG_SUFFIX), mltpath);
+        exepath = QStandardPaths::findExecutable(QString("ffmpeg%1").arg(FFMPEG_SUFFIX), mltpath);
         if (exepath.isEmpty()) {
-            exepath = QStandardPaths::findExecutable(QStringLiteral("ffmpeg%1").arg(FFMPEG_SUFFIX));
+            exepath = QStandardPaths::findExecutable(QString("ffmpeg%1").arg(FFMPEG_SUFFIX));
         }
-        qDebug() << "Unable to find FFMpeg binary...";
+        qDebug() << "Found FFMpeg binary: "<<exepath;
         if (exepath.isEmpty()) {
             // Check for libav version
             exepath = QStandardPaths::findExecutable(QStringLiteral("avconv"));
             if (exepath.isEmpty()) {
-                m_warnings.append(i18n("<li>Missing app: <b>ffmpeg</b><br/>required for proxy clips and transcoding</li>"));
+                warnings.append(i18n("<li>Missing app: <b>ffmpeg</b><br/>required for proxy clips and transcoding</li>"));
                 allIsOk = false;
             }
         }
@@ -642,7 +663,7 @@ void Wizard::slotCheckPrograms()
             // Check for libav version
             playpath = QStandardPaths::findExecutable(QStringLiteral("avplay"));
             if (playpath.isEmpty()) {
-                m_infos.append(i18n("<li>Missing app: <b>ffplay</b><br/>recommended for some preview jobs</li>"));
+                infos.append(i18n("<li>Missing app: <b>ffplay</b><br/>recommended for some preview jobs</li>"));
             }
         }
     }
@@ -656,7 +677,7 @@ void Wizard::slotCheckPrograms()
             // Check for libav version
             probepath = QStandardPaths::findExecutable(QStringLiteral("avprobe"));
             if (probepath.isEmpty()) {
-                m_infos.append(i18n("<li>Missing app: <b>ffprobe</b><br/>recommended for extra clip analysis</li>"));
+                infos.append(i18n("<li>Missing app: <b>ffprobe</b><br/>recommended for extra clip analysis</li>"));
             }
         }
     }
@@ -732,7 +753,7 @@ void Wizard::installExtraMimes(const QString &baseName, const QStringList &globs
     } else {
         QStringList extensions = mime.globPatterns();
         QString comment = mime.comment();
-        for (const QString &glob : missingGlobs) {
+        for (const QString &glob : qAsConst(missingGlobs)) {
             if (!extensions.contains(glob)) {
                 extensions << glob;
             }
@@ -765,7 +786,7 @@ void Wizard::installExtraMimes(const QString &baseName, const QStringList &globs
             writer.writeEndElement(); // comment
         }
 
-        for (const QString &pattern : extensions) {
+        for (const QString &pattern : qAsConst(extensions)) {
             writer.writeStartElement(nsUri, QStringLiteral("glob"));
             writer.writeAttribute(QStringLiteral("pattern"), pattern);
             writer.writeEndElement(); // glob
@@ -894,7 +915,7 @@ void Wizard::slotCheckMlt()
     if (m_systemCheckIsOk) {
         checkMltComponents();
     }
-    slotCheckPrograms();
+    slotCheckPrograms(m_infos, m_warnings);
 }
 
 bool Wizard::isOk() const
@@ -904,13 +925,11 @@ bool Wizard::isOk() const
 
 void Wizard::slotOpenManual()
 {
+#if KIO_VERSION >= QT_VERSION_CHECK(5,71,0)
+    KIO::OpenUrlJob(QUrl(QStringLiteral("https://kdenlive.org/troubleshooting")), QStringLiteral("text/html"));
+#else
     KRun::runUrl(QUrl(QStringLiteral("https://kdenlive.org/troubleshooting")), QStringLiteral("text/html"), this, KRun::RunFlags());
-}
-
-void Wizard::slotShowWebInfos()
-{
-    KRun::runUrl(QUrl("http://kdenlive.org/discover/" + QString(kdenlive_version).section(QLatin1Char(' '), 0, 0)), QStringLiteral("text/html"), this,
-                 KRun::RunFlags());
+#endif
 }
 
 void Wizard::slotSaveCaptureFormat()

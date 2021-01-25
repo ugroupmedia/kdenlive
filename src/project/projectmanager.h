@@ -65,7 +65,7 @@ public:
     /** @brief Disable all bin effects in current project */
     void disableBinEffects(bool disable);
     /** @brief Returns current project's xml scene */
-    QString projectSceneList(const QString &outputFolder);
+    QString projectSceneList(const QString &outputFolder, const QString overlayData = QString());
     /** @brief returns a default hd profile depending on timezone*/
     static QString getDefaultProjectFormat();
     void saveZone(const QStringList &info, const QDir &dir);
@@ -89,6 +89,14 @@ public:
      */
     void saveWithUpdatedProfile(const QString &updatedProfile);
 
+    /** @brief Get the number of tracks in this projec (video, audio).
+     */
+    QPair<int, int> tracksCount();
+
+    /** @brief Add requested audio tracks number to project.
+     */
+    void addAudioTracks(int tracksCount);
+
 public slots:
     void newFile(QString profileName, bool showProjectSettings = true);
     void newFile(bool showProjectSettings = true);
@@ -103,16 +111,19 @@ public slots:
     bool saveFile();
 
     /** @brief Shows a save file dialog for saving the project.
+     * @param saveACopy Default is false. If true, the file title of the dialog is set to "Save Copy…"
      * @return Whether the file was saved. */
-    bool saveFileAs();
+    bool saveFileAs(bool saveACopy = false);
 
     /** @brief Set properties to match outputFileName and save the document.
-     * Creates an autosave version of the output file too, at
+     * Creates an autosave version of the output file too (only if not in copymode), at
      * ~/.kde/data/stalefiles/kdenlive/ \n
      * that will be actually written in KdenliveDoc::slotAutoSave()
      * @param outputFileName The URL to save to / The document's URL.
+     * @param saveACopy Default is false. If true, the file will be saved but isn’t opened afterwards. Besides no autosave version will be created
      * @return Whether we had success. */
-    bool saveFileAs(const QString &outputFileName);
+    bool saveFileAs(const QString &outputFileName, bool saveACopy = false);
+
     /** @brief Close currently opened document. Returns false if something went wrong (cannot save modifications, ...). */
     bool closeCurrentDocument(bool saveChanges = true, bool quit = false);
 
@@ -125,13 +136,10 @@ public slots:
     void slotStartAutoSave();
 
     /** @brief Update project and monitors profiles */
-    void slotResetProfiles();
+    void slotResetProfiles(bool reloadThumbs);
 
     /** @brief Rebuild consumers after a property change */
     void slotResetConsumers(bool fullReset);
-
-    /** @brief Expand current timeline clip (recover clips and tracks from an MLT playlist) */
-    void slotExpandClip();
 
     /** @brief Dis/enable all timeline effects */
     void slotDisableTimelineEffects(bool disable);
@@ -142,6 +150,12 @@ public slots:
 
     /** @brief Make current timeline track active/inactive*/
     void slotSwitchTrackActive();
+    /** @brief Toggle the active/inactive state of all tracks*/
+    void slotSwitchAllTrackActive();
+    /** @brief Make all tracks active or inactive */
+    void slotMakeAllTrackActive();
+    /** @brief Restore current clip target tracks */
+    void slotRestoreTargetTracks();
 
     /** @brief Un/Set current track as target */
     void slotSwitchTrackTarget();
@@ -155,6 +169,8 @@ public slots:
     void activateAsset(const QVariantMap &effectData);
     /** @brief insert current timeline timecode in notes widget and focus widget to allow entering quick note */
     void slotAddProjectNote();
+    /** @brief insert license text in notes widget and focus widget to allow entering quick note */
+    void slotAddTextNote(const QString &text);
 
 private slots:
     void slotRevert();
@@ -168,16 +184,12 @@ private slots:
 
 signals:
     void docOpened(KdenliveDoc *document);
-    //     void projectOpened(Project *project);
 
 protected:
+    /** @brief Update the timeline according to the MLT XML */
     bool updateTimeline(int pos = -1, int scrollPos = -1);
 
 private:
-    /** @brief Checks that the Kdenlive MIME type is correctly installed.
-     * @param open If set to true, this will return the MIME type allowed for file opening (adds .tar.gz format)
-     * @return The MIME type */
-    QString getMimeType(bool open = true);
     /** @brief checks if autoback files exists, recovers from it if user says yes, returns true if files were recovered. */
     bool checkForBackupFile(const QUrl &url, bool newFile = false);
 
@@ -193,6 +205,8 @@ private:
     KRecentFilesAction *m_recentFilesAction;
     NotesPlugin *m_notesPlugin;
     QProgressDialog *m_progressDialog{nullptr};
+    /** @brief If true, means we are still opening Kdenlive, send messages to splash screen */
+    bool m_loading;
     void saveRecentFiles();
 };
 

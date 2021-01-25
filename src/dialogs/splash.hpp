@@ -22,33 +22,26 @@
 #ifndef SPLASH_H
 #define SPLASH_H
 
-#include <QObject>
-#include <memory>
+#include <QSplashScreen>
+#include <QStyleOptionProgressBar>
 
-class QQmlEngine;
-class QQmlComponent;
-class QQuickWindow;
-
-class Splash : public QObject
+class Splash : public QSplashScreen
 {
     Q_OBJECT
 
 public:
-    Splash(QObject *parent);
-    ~Splash();
+    explicit Splash(const QPixmap &pixmap);
+    //~Splash();
 
-    void endSplash();
+public slots:
+    void showProgressMessage(const QString &message, int progress = 0, int max = -1);
 
-signals:
-    void sigEndSplash();
-
-private slots:
-    void continueLoading();
+private:
+    int m_progress;
+    QStyleOptionProgressBar m_pbStyle;
 
 protected:
-    QQmlEngine *m_engine;
-    QQmlComponent* component;
-    QQuickWindow *childItem;
+    void drawContents(QPainter *painter) override;
 };
 
 #endif

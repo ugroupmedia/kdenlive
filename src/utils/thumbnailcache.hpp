@@ -61,7 +61,7 @@ public:
     */
     QImage getThumbnail(const QString &binId, int pos, bool volatileOnly = false) const;
     QImage getAudioThumbnail(const QString &binId, bool volatileOnly = false) const;
-    const QUrl getAudioThumbPath(const QString &binId) const;
+    const QList <QUrl> getAudioThumbPath(const QString &binId) const;
 
     /* @brief Get a given thumbnail from the cache
        @param binId is the id of the queried clip
@@ -71,7 +71,7 @@ public:
     void storeThumbnail(const QString &binId, int pos, const QImage &img, bool persistent = false);
 
     /* @brief Removes all the thumbnails for a given clip */
-    void invalidateThumbsForClip(const QString &binId, bool reloadAudio);
+    void invalidateThumbsForClip(const QString &binId);
 
     /* @brief Save all cached thumbs to disk */
     void saveCachedThumbs(QStringList keys);
@@ -85,7 +85,7 @@ protected:
 
     // Return the key associated to a thumbnail
     static QString getKey(const QString &binId, int pos, bool *ok);
-    static QString getAudioKey(const QString &binId, bool *ok);
+    static QStringList getAudioKey(const QString &binId, bool *ok);
 
     // Return the dir where the persistent cache lives
     static QDir getDir(bool audio, bool *ok);

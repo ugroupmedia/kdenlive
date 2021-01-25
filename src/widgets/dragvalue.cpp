@@ -59,6 +59,7 @@ DragValue::DragValue(const QString &label, double defaultValue, int decimals, do
     l->setSpacing(0);
     l->setContentsMargins(0, 0, 0, 0);
     m_label = new CustomLabel(label, showSlider, m_maximum - m_minimum, this);
+    m_label->setObjectName("draggLabel");
     l->addWidget(m_label);
     setMinimumHeight(m_label->sizeHint().height());
     if (decimals == 0) {
@@ -107,7 +108,7 @@ DragValue::DragValue(const QString &label, double defaultValue, int decimals, do
         connect(m_doubleEdit, SIGNAL(valueChanged(double)), this, SLOT(slotSetValue(double)));
         connect(m_doubleEdit, &QAbstractSpinBox::editingFinished, this, &DragValue::slotEditingFinished);
     }
-    connect(m_label, SIGNAL(valueChanged(double, bool)), this, SLOT(setValueFromProgress(double, bool)));
+    connect(m_label, SIGNAL(valueChanged(double,bool)), this, SLOT(setValueFromProgress(double,bool)));
     connect(m_label, &CustomLabel::resetValue, this, &DragValue::slotReset);
     setLayout(l);
     if (m_intEdit) {
@@ -431,7 +432,7 @@ void CustomLabel::mousePressEvent(QMouseEvent *e)
     if (e->button() == Qt::LeftButton) {
         m_dragStartPosition = m_dragLastPosition = e->pos();
         e->accept();
-    } else if (e->button() == Qt::MidButton) {
+    } else if (e->button() == Qt::MiddleButton) {
         emit resetValue();
         m_dragStartPosition = QPoint(-1, -1);
     } else {
@@ -487,7 +488,7 @@ void CustomLabel::mouseMoveEvent(QMouseEvent *e)
 
 void CustomLabel::mouseReleaseEvent(QMouseEvent *e)
 {
-    if (e->button() == Qt::MidButton) {
+    if (e->button() == Qt::MiddleButton) {
         e->accept();
         return;
     }

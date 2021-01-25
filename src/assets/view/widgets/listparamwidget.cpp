@@ -30,7 +30,6 @@ ListParamWidget::ListParamWidget(std::shared_ptr<AssetParameterModel> model, QMo
     setupUi(this);
 
     // Get data from model
-    QString name = m_model->data(m_index, AssetParameterModel::NameRole).toString();
     QString comment = m_model->data(m_index, AssetParameterModel::CommentRole).toString();
 
     // setup the comment
@@ -47,7 +46,7 @@ ListParamWidget::ListParamWidget(std::shared_ptr<AssetParameterModel> model, QMo
     // emit the signal of the base class when appropriate
     // The connection is ugly because the signal "currentIndexChanged" is overloaded in QComboBox
     connect(this->m_list, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
-            [this](int) {
+            this, [this](int) {
                 emit valueChanged(m_index, m_list->itemData(m_list->currentIndex()).toString(), true);
     });
 }
@@ -128,16 +127,8 @@ void ListParamWidget::slotRefresh()
         if (names.count() != values.count()) {
             names = values;
         }
-        QLocale locale;
-        locale.setNumberOptions(QLocale::OmitGroupSeparator);
         for (int i = 0; i < names.count(); i++) {
-            QString val = values.at(i);
-            bool ok;
-            double num = val.toDouble(&ok);
-            if (ok) {
-                val = locale.toString(num);
-            }
-            m_list->addItem(names.at(i), val);
+            m_list->addItem(names.at(i), values.at(i));
         }
         if (!value.isEmpty()) {
             int ix = m_list->findData(value);

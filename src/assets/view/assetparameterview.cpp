@@ -26,6 +26,7 @@
 #include "assets/view/widgets/abstractparamwidget.hpp"
 #include "assets/view/widgets/keyframewidget.hpp"
 #include "core.h"
+#include "monitor/monitor.h"
 
 #include <QActionGroup>
 #include <QDebug>
@@ -58,7 +59,7 @@ void AssetParameterView::setModel(const std::shared_ptr<AssetParameterModel> &mo
     const QString paramTag = model->getAssetId();
     QDir dir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/effects/presets/"));
     const QString presetFile = dir.absoluteFilePath(QString("%1.json").arg(paramTag));
-    connect(this, &AssetParameterView::updatePresets, [this, presetFile](const QString &presetName) {
+    connect(this, &AssetParameterView::updatePresets, this, [this, presetFile](const QString &presetName) {
         m_presetMenu->clear();
         m_presetGroup.reset(new QActionGroup(this));
         m_presetGroup->setExclusive(true);
@@ -73,7 +74,7 @@ void AssetParameterView::setModel(const std::shared_ptr<AssetParameterModel> &mo
             updatePreset->setEnabled(false);
             deletePreset->setEnabled(false);
         }
-        for (const QString &pName : presets) {
+        for (const QString &pName : qAsConst(presets)) {
             QAction *ac = m_presetMenu->addAction(pName, this, SLOT(slotLoadPreset()));
             m_presetGroup->addAction(ac);
             ac->setData(pName);
@@ -82,18 +83,17 @@ void AssetParameterView::setModel(const std::shared_ptr<AssetParameterModel> &mo
                 ac->setChecked(true);
             }
         }
-        
     });
     emit updatePresets();
     connect(m_model.get(), &AssetParameterModel::dataChanged, this, &AssetParameterView::refresh);
-    if (paramTag.endsWith(QStringLiteral("lift_gamma_gain"))) {
+    if (paramTag.endsWith(QStringLiteral("lift_gamma_gain")) || m_model->getParam(QStringLiteral("mlt_service")).endsWith(QStringLiteral("lift_gamma_gain"))) {
         // Special case, the colorwheel widget manages several parameters
         QModelIndex index = model->index(0, 0);
         auto w = AbstractParamWidget::construct(model, index, frameSize, this);
         connect(w, &AbstractParamWidget::valuesChanged, this, &AssetParameterView::commitMultipleChanges);
         connect(w, &AbstractParamWidget::valueChanged, this, &AssetParameterView::commitChanges);
         m_lay->addWidget(w);
-        connect(w, &AbstractParamWidget::updateHeight, [&, w](int h) {
+        connect(w, &AbstractParamWidget::updateHeight, this, [&](int h) {
             setFixedHeight(h + m_lay->contentsMargins().bottom());
             emit updateHeight();
         });
@@ -113,7 +113,8 @@ void AssetParameterView::setModel(const std::shared_ptr<AssetParameterModel> &mo
                 connect(this, &AssetParameterView::initKeyframeView, w, &AbstractParamWidget::slotInitMonitor);
                 connect(w, &AbstractParamWidget::valueChanged, this, &AssetParameterView::commitChanges);
                 connect(w, &AbstractParamWidget::seekToPos, this, &AssetParameterView::seekToPos);
-                connect(w, &AbstractParamWidget::updateHeight, [&, w]() {
+                connect(w, &AbstractParamWidget::activateEffect, this, &AssetParameterView::activateEffect);
+                connect(w, &AbstractParamWidget::updateHeight, this, [&]() {
                     setFixedHeight(contentHeight());
                     emit updateHeight();
                 });
@@ -131,12 +132,13 @@ void AssetParameterView::setModel(const std::shared_ptr<AssetParameterModel> &mo
     if (addSpacer) {
         m_lay->addStretch();
     }
+    // Ensure effect parameters are adjusted to current position
+    Monitor *monitor = pCore->getMonitor(m_model->monitorId);
+    emit monitor->seekPosition(monitor->position());
 }
 
 QVector<QPair<QString, QVariant>> AssetParameterView::getDefaultValues() const
 {
-    QLocale locale;
-    locale.setNumberOptions(QLocale::OmitGroupSeparator);
     QVector<QPair<QString, QVariant>> values;
     for (int i = 0; i < m_model->rowCount(); ++i) {
         QModelIndex index = m_model->index(i, 0);
@@ -144,7 +146,7 @@ QVector<QPair<QString, QVariant>> AssetParameterView::getDefaultValues() const
         auto type = m_model->data(index, AssetParameterModel::TypeRole).value<ParamType>();
         QVariant defaultValue = m_model->data(index, AssetParameterModel::DefaultRole);
         if (type == ParamType::KeyframeParam || type == ParamType::AnimatedRect) {
-            QString val = type == ParamType::KeyframeParam ? locale.toString(defaultValue.toDouble()) : defaultValue.toString();
+            QString val = defaultValue.toString();
             if (!val.contains(QLatin1Char('='))) {
                 val.prepend(QStringLiteral("%1=").arg(m_model->data(index, AssetParameterModel::ParentInRole).toInt()));
                 defaultValue = QVariant(val);
@@ -235,26 +237,20 @@ void AssetParameterView::refresh(const QModelIndex &topLeft, const QModelIndex &
     // We are expecting indexes that are children of the root index, which is "invalid"
     Q_ASSERT(!topLeft.parent().isValid());
     // We make sure the range is valid
-    if (m_mainKeyframeWidget) {
-        m_mainKeyframeWidget->slotRefresh();
-    } else {
-        auto type = m_model->data(m_model->index(topLeft.row(), 0), AssetParameterModel::TypeRole).value<ParamType>();
-        if (type == ParamType::ColorWheel) {
-            // Some special widgets, like colorwheel handle multiple params so we can have cases where param index row is greater than the number of widgets.
-            // Should be better managed
-            m_widgets[0]->slotRefresh();
-            return;
-        }
-        size_t max;
-        if (!bottomRight.isValid()) {
-            max = m_widgets.size() - 1;
-        } else {
-            max = (size_t)bottomRight.row();
-        }
-        Q_ASSERT(max < m_widgets.size());
-        for (size_t i = (size_t)topLeft.row(); i <= max; ++i) {
-            m_widgets[i]->slotRefresh();
-        }
+    auto type = m_model->data(m_model->index(topLeft.row(), 0), AssetParameterModel::TypeRole).value<ParamType>();
+    if (type == ParamType::ColorWheel) {
+        // Some special widgets, like colorwheel handle multiple params so we can have cases where param index row is greater than the number of widgets.
+        // Should be better managed
+        m_widgets[0]->slotRefresh();
+        return;
+    }
+    size_t max = m_widgets.size() - 1;
+    if (bottomRight.isValid()) {
+        max = qMin(max, (size_t)bottomRight.row());
+    }
+    Q_ASSERT(max < m_widgets.size());
+    for (size_t i = (size_t)topLeft.row(); i <= max; ++i) {
+        m_widgets[i]->slotRefresh();
     }
 }
 

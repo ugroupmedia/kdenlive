@@ -17,23 +17,18 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA          *
  ***************************************************************************/
 
-#include "framework/mlt_version.h"
+#include "../src/lib/localeHandling.h"
 #include "mlt++/Mlt.h"
 #include "renderjob.h"
 #include <QApplication>
 #include <QDir>
 #include <QDomDocument>
-#include <QString>
-#include <QStringList>
-#include <QObject>
-#include <cstdio>
 
 int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
     QStringList args = app.arguments();
     QStringList preargs;
-    QString locale;
     if (args.count() >= 4) {
         // Remove program name
         args.removeFirst();
@@ -56,7 +51,11 @@ int main(int argc, char **argv)
         if (args.count() > 0 && args.at(0) == QLatin1String("-split")) {
             args.removeFirst();
             // chunks to render
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
             QStringList chunks = args.at(0).split(QLatin1Char(','), QString::SkipEmptyParts);
+#else
+            QStringList chunks = args.at(0).split(QLatin1Char(','), Qt::SkipEmptyParts);
+#endif
             args.removeFirst();
             // chunk size in frames
             int chunkSize = args.at(0).toInt();
@@ -68,10 +67,19 @@ int main(int argc, char **argv)
             QString extension = args.at(0);
             args.removeFirst();
             // avformat consumer params
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
             QStringList consumerParams = args.at(0).split(QLatin1Char(' '), QString::SkipEmptyParts);
+#else
+            QStringList consumerParams = args.at(0).split(QLatin1Char(' '), Qt::SkipEmptyParts);
+#endif
             args.removeFirst();
             QDir baseFolder(target);
+
+            // After initialising the MLT factory, set the locale back from user default to C
+            // to ensure numbers are always serialised with . as decimal point.
             Mlt::Factory::init();
+            LocaleHandling::resetLocale();
+
             Mlt::Profile profile(profilePath.toUtf8().constData());
             profile.set_explicit(1);
             Mlt::Producer prod(profile, nullptr, playlist.toUtf8().constData());
@@ -81,9 +89,9 @@ int main(int argc, char **argv)
             }
             const char *localename = prod.get_lcnumeric();
             QLocale::setDefault(QLocale(localename));
-            for (const QString &frame : chunks) {
+            for (const QString &frame : qAsConst(chunks)) {
                 fprintf(stderr, "START:%d \n", frame.toInt());
-                QString fileName = QStringLiteral("%1.%2").arg(frame).arg(extension);
+                QString fileName = QStringLiteral("%1.%2").arg(frame,extension);
                 if (baseFolder.exists(fileName)) {
                     // Don't overwrite an existing file
                     fprintf(stderr, "DONE:%d \n", frame.toInt());
@@ -92,7 +100,7 @@ int main(int argc, char **argv)
                 QScopedPointer<Mlt::Producer> playlst(prod.cut(frame.toInt(), frame.toInt() + chunkSize));
                 QScopedPointer<Mlt::Consumer> cons(
                     new Mlt::Consumer(profile, QString("avformat:%1").arg(baseFolder.absoluteFilePath(fileName)).toUtf8().constData()));
-                for (const QString &param : consumerParams) {
+                for (const QString &param : qAsConst(consumerParams)) {
                     if (param.contains(QLatin1Char('='))) {
                         cons->set(param.section(QLatin1Char('='), 0, 0).toUtf8().constData(), param.section(QLatin1Char('='), 1).toUtf8().constData());
                     }
@@ -110,7 +118,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "DONE:%d \n", frame.toInt());
             }
             // Mlt::Factory::close();
-            fprintf(stderr, "+ + + RENDERING FINSHED + + + \n");
+            fprintf(stderr, "+ + + RENDERING FINISHED + + + \n");
             return 0;
         }
         int in = -1;

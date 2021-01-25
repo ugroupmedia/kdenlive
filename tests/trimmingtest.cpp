@@ -447,8 +447,15 @@ TEST_CASE("Advanced trimming operations", "[Trimming]")
     SECTION("Cut should preserve AV groups")
     {
         QString binId3 = createProducerWithSound(profile_trimming, binModel);
+        
         int tid6 = TrackModel::construct(timeline, -1, -1, QString(), true);
         int tid5 = TrackModel::construct(timeline);
+    
+        // Setup timeline audio drop info
+        QMap <int, QString>audioInfo;
+        audioInfo.insert(1,QStringLiteral("stream1"));
+        timeline->m_binAudioTargets = audioInfo;
+        timeline->m_videoTarget = tid5;
 
         int cid6 = -1;
         int pos = 3;
@@ -558,6 +565,12 @@ TEST_CASE("Insert/delete", "[Trimming2]")
     int tid2 = TrackModel::construct(timeline, -1, -1, QString(), true);
     int tid1 = TrackModel::construct(timeline);
     TrackModel::construct(timeline);
+    
+    // Setup timeline audio drop info
+    QMap <int, QString>audioInfo;
+    audioInfo.insert(1,QStringLiteral("stream1"));
+    timeline->m_binAudioTargets = audioInfo;
+    timeline->m_videoTarget = tid1;
 
     SECTION("Remove Space should preserve groups")
     {
@@ -618,13 +631,13 @@ TEST_CASE("Insert/delete", "[Trimming2]")
         };
         state();
 
-        timeline->m_audioTarget = tid2;
+        timeline->m_audioTarget.insert(tid2, 0);
         timeline->m_videoTarget = tid1;
         // Make tracks active
         timeline->setTrackProperty(tid1, QStringLiteral("kdenlive:timeline_active"), QStringLiteral("1"));
         timeline->setTrackProperty(tid2, QStringLiteral("kdenlive:timeline_active"), QStringLiteral("1"));
         REQUIRE(TimelineFunctions::insertZone(timeline, {tid1, tid2}, binId, 3 + 2, {l / 4, 3 * l / 4}, false));
-        timeline->m_audioTarget = -1;
+        timeline->m_audioTarget.clear();
         timeline->m_videoTarget = -1;
         int small_length = 3 * l / 4 - l / 4;
         int cid3 = timeline->getClipByPosition(tid1, 3 + 2);
@@ -728,6 +741,12 @@ TEST_CASE("Copy/paste", "[CP]")
     int tid2 = TrackModel::construct(timeline, -1, -1, QString(), true);
     int tid1 = TrackModel::construct(timeline);
     int tid1b = TrackModel::construct(timeline);
+    
+    // Setup timeline audio drop info
+    QMap <int, QString>audioInfo;
+    audioInfo.insert(1,QStringLiteral("stream1"));
+    timeline->m_binAudioTargets = audioInfo;
+    timeline->m_videoTarget = tid1;
 
     SECTION("Simple copy paste of one clip")
     {
@@ -1052,7 +1071,6 @@ TEST_CASE("Copy/paste", "[CP]")
         cid4 = timeline->m_groups->getSplitPartner(cid3);
         state2(tid2b);
     }
-
     binModel->clean();
     pCore->m_projectManager = nullptr;
     Logger::print_trace();

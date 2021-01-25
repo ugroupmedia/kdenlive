@@ -50,7 +50,7 @@ enum class GroupType {
 const QString groupTypeToStr(GroupType t);
 GroupType groupTypeFromStr(const QString &s);
 
-enum class ObjectType { TimelineClip, TimelineComposition, TimelineTrack, BinClip, Master, NoItem };
+enum class ObjectType { TimelineClip, TimelineComposition, TimelineTrack, TimelineMix, TimelineSubtitle, BinClip, Master, NoItem };
 using ObjectId = std::pair<ObjectType, int>;
 
 enum OperationType {
@@ -82,12 +82,24 @@ enum ClipState { VideoOnly = 1, AudioOnly = 2, Disabled = 3 };
 Q_ENUM_NS(ClipState)
 } // namespace PlaylistState
 
+namespace FileStatus {
+Q_NAMESPACE
+enum ClipStatus { StatusReady = 0, StatusProxy, StatusMissing, StatusWaiting, StatusDeleting, StatusProxyOnly };
+Q_ENUM_NS(ClipStatus)
+} // namespace PlaylistState
+
 // returns a pair corresponding to (video, audio)
 std::pair<bool, bool> stateToBool(PlaylistState::ClipState state);
 PlaylistState::ClipState stateFromBool(std::pair<bool, bool> av);
 
 namespace TimelineMode {
 enum EditMode { NormalEdit = 0, OverwriteEdit = 1, InsertEdit = 2 };
+}
+
+namespace AssetListType {
+Q_NAMESPACE
+enum AssetType { Preferred, Video, Audio, Custom, CustomAudio, Favorites, AudioComposition, VideoShortComposition, VideoComposition, AudioTransition, VideoTransition, Hidden = -1 };
+Q_ENUM_NS(AssetType)
 }
 
 namespace ClipType {
@@ -107,7 +119,8 @@ enum ProducerType {
     TextTemplate = 11,
     QText = 12,
     Composition = 13,
-    Track = 14
+    Track = 14,
+    Qml = 15
 };
 Q_ENUM_NS(ProducerType)
 } // namespace ClipType
@@ -125,10 +138,15 @@ enum MonitorSceneType {
     MonitorSceneCorners,
     MonitorSceneRoto,
     MonitorSceneSplit,
-    MonitorSceneRipple
+    MonitorSceneRipple,
+    MonitorSplitTrack
 };
 
-enum MessageType { DefaultMessage, ProcessingJobMessage, OperationCompletedMessage, InformationMessage, ErrorMessage, MltError };
+enum MessageType { DefaultMessage, ProcessingJobMessage, OperationCompletedMessage, InformationMessage, ErrorMessage, MltError, DirectMessage };
+
+namespace BinMessage {
+    enum BinCategory { NoMessage = 0, ProfileMessage, StreamsMessage, InformationMessage };
+}
 
 enum TrackType { AudioTrack = 0, VideoTrack = 1, AnyTrack = 2 };
 
@@ -246,6 +264,34 @@ private:
     GenTime m_time;
     QString m_comment;
     int m_type{0};
+};
+
+class SubtitledTime
+{
+public:
+    SubtitledTime();
+    SubtitledTime(const GenTime &start, QString sub, const GenTime &end);
+    
+    QString subtitle() const;
+    GenTime start() const;
+    GenTime end() const;
+    
+    void setSubtitle(const QString &sub);
+    void setEndTime(const GenTime &end);
+    
+    /* Implementation of > operator; Works identically as with basic types. */
+    bool operator>(const SubtitledTime &op) const;
+    /* Implementation of < operator; Works identically as with basic types. */
+    bool operator<(const SubtitledTime &op) const;
+    /* Implementation of == operator; Works identically as with basic types. */
+    bool operator==(const SubtitledTime &op) const;
+    /* Implementation of != operator; Works identically as with basic types. */
+    bool operator!=(const SubtitledTime &op) const;
+    
+private:
+    GenTime m_starttime;
+    QString m_subtitle;
+    GenTime m_endtime;
 };
 
 QDebug operator<<(QDebug qd, const ItemInfo &info);

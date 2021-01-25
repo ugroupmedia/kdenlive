@@ -22,6 +22,7 @@
 #include "assets/model/assetparametermodel.hpp"
 #include "bin/projectclip.h"
 #include "bin/projectitemmodel.h"
+#include "profiles/profilemodel.hpp"
 #include "core.h"
 #include "kdenlivesettings.h"
 #include "macros.hpp"
@@ -30,15 +31,39 @@
 
 #include <klocalizedstring.h>
 
-FilterClipJob::FilterClipJob(const QString &binId, int cid, std::weak_ptr<AssetParameterModel> model, const QString &assetId, int in, int out, const QString &filterName, std::unordered_map<QString, QVariant> filterParams, std::unordered_map<QString, QString> filterData)
-    : MeltJob(binId, FILTERCLIPJOB, false, in, out)
+FilterClipJob::FilterClipJob(const QString &binId, const ObjectId &owner, std::weak_ptr<AssetParameterModel> model, const QString &assetId, int in, int out, const QString &filterName, std::unordered_map<QString, QVariant> filterParams, std::unordered_map<QString, QString> filterData, const QStringList consumerArgs)
+    : MeltJob(binId, owner, FILTERCLIPJOB, false, in, out)
     , m_model(model)
     , m_filterName(filterName)
-    , m_timelineClipId(cid)
     , m_assetId(assetId)
     , m_filterParams(std::move(filterParams))
     , m_filterData(std::move(filterData))
+    , m_consumerArgs(consumerArgs)
 {
+    m_timelineClipId = -1;
+    if (owner.first == ObjectType::TimelineClip) {
+        m_timelineClipId = owner.second;
+    }
+}
+
+void FilterClipJob::configureProducer()
+{
+    if (m_producer != nullptr) {
+        // producer already configured, abort
+        return;
+    }
+    // We are on master or track, configure producer accordingly
+    if (m_owner.first == ObjectType::Master) {
+        m_profile.reset(&pCore->getCurrentProfile()->profile());
+        m_producer = pCore->getMasterProducerInstance();
+    } else if (m_owner.first == ObjectType::TimelineTrack) {
+        m_profile.reset(&pCore->getCurrentProfile()->profile());
+        m_producer = pCore->getTrackProducerInstance(m_owner.second);
+    }
+    length = m_producer->get_playtime();
+    if (length == 0) {
+        length = m_producer->get_length();
+    }
 }
 
 const QString FilterClipJob::getDescription() const
@@ -49,9 +74,12 @@ const QString FilterClipJob::getDescription() const
 
 void FilterClipJob::configureConsumer()
 {
-    m_consumer = std::make_unique<Mlt::Consumer>(*m_profile.get(), "xml");
-    m_consumer->set("all", 1);
-    m_consumer->set("terminate_on_pause", 1);
+    m_consumer = std::make_unique<Mlt::Consumer>(*m_profile.get(), "null");
+    for (const QString &param : qAsConst(m_consumerArgs)) {
+        if (param.contains(QLatin1Char('='))) {
+            m_consumer->set(param.section(QLatin1Char('='), 0, 0).toUtf8().constData(), param.section(QLatin1Char('='), 1).toInt());
+        }
+    }
 }
 
 void FilterClipJob::configureFilter()
@@ -73,6 +101,11 @@ void FilterClipJob::configureFilter()
             m_filter->set(it.first.toUtf8().constData(), it.second.toString().toUtf8().constData());
         }
     }
+    if (m_filterData.find(QLatin1String("relativeInOut")) != m_filterData.end()) {
+        // leave it operate on full clip
+    } else {
+        m_filter->set_in_and_out(m_producer->get_in(), m_producer->get_out());
+    }
 }
 
 bool FilterClipJob::commitResult(Fun &undo, Fun &redo)
@@ -84,6 +117,10 @@ bool FilterClipJob::commitResult(Fun &undo, Fun &redo)
     }
     m_resultConsumed = true;
     if (!m_successful) {
+        m_producer->detach(*m_filter.get());
+        m_filter.reset();
+        m_producer.reset();
+        m_wholeProducer.reset();
         return false;
     }
     QVector<QPair<QString, QVariant>> params;
@@ -91,7 +128,7 @@ bool FilterClipJob::commitResult(Fun &undo, Fun &redo)
     if (m_filterData.find(QStringLiteral("key")) != m_filterData.end()) {
         key = m_filterData.at(QStringLiteral("key"));
     }
-    QString resultData = QString::fromLatin1(m_filter->get(key.toUtf8().constData()));
+    QString resultData = qstrdup(m_filter->get(key.toUtf8().constData()));
     params.append({key,QVariant(resultData)});
     qDebug()<<"= = = GOT FILTER RESULTS: "<<params;
     if (m_filterData.find(QStringLiteral("storedata")) != m_filterData.end()) {
@@ -102,8 +139,10 @@ bool FilterClipJob::commitResult(Fun &undo, Fun &redo)
     }
     auto operation = [assetModel = m_model, filterParams = std::move(params)]() {
         if (auto ptr = assetModel.lock()) {
+            qDebug()<<"===== SETTING FILTER PARAM: "<<filterParams;
             ptr->setParameters(filterParams);
         }
+        pCore->setDocumentModified();
         return true;
     };
     auto reverse = [assetModel = m_model, keyName = key]() {
@@ -112,9 +151,14 @@ bool FilterClipJob::commitResult(Fun &undo, Fun &redo)
         if (auto ptr = assetModel.lock()) {
             ptr->setParameters(fParams);
         }
+        pCore->setDocumentModified();
         return true;
     };
     bool ok = operation();
+    m_producer->detach(*m_filter.get());
+    m_filter.reset();
+    m_producer.reset();
+    m_wholeProducer.reset();
     if (ok) {
         UPDATE_UNDO_REDO_NOLOCK(operation, reverse, undo, redo);
     }

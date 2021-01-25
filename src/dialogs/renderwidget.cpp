@@ -91,10 +91,14 @@ enum {
 };
 
 // Render job roles
-const int ParametersRole = Qt::UserRole + 1;
-const int TimeRole = Qt::UserRole + 2;
-const int ProgressRole = Qt::UserRole + 3;
-const int ExtraInfoRole = Qt::UserRole + 5;
+enum {
+    ParametersRole = Qt::UserRole + 1,
+    StartTimeRole,
+    ProgressRole,
+    ExtraInfoRole = ProgressRole + 2, // vpinon: don't understand why, else spurious message displayed
+    LastTimeRole,
+    LastFrameRole
+};
 
 // Running job status
 enum JOBSTATUS { WAITINGJOB = 0, STARTINGJOB, RUNNINGJOB, FINISHEDJOB, FAILEDJOB, ABORTEDJOB };
@@ -217,6 +221,9 @@ RenderWidget::RenderWidget(bool enableProxy, QWidget *parent)
     m_view.open_browser->setVisible(false);
     m_view.error_box->setVisible(false);
     m_view.tc_type->setEnabled(false);
+    m_view.tc_type->addItem(i18n("Timecode"), QStringLiteral("#timecode#"));
+    m_view.tc_type->addItem(i18n("Timecode non drop frame"), QStringLiteral("#smtpe_ndf#"));
+    m_view.tc_type->addItem(i18n("Frame number"), QStringLiteral("#frame#"));
     m_view.checkTwoPass->setEnabled(false);
     m_view.proxy_render->setHidden(!enableProxy);
     connect(m_view.proxy_render, &QCheckBox::toggled, this, &RenderWidget::slotProxyWarn);
@@ -361,7 +368,7 @@ RenderWidget::RenderWidget(bool enableProxy, QWidget *parent)
         m_view.parallel_process->setEnabled(false);
     }
     m_view.field_order->setEnabled(false);
-    connect(m_view.scanning_list, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index) { m_view.field_order->setEnabled(index == 2); });
+    connect(m_view.scanning_list, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) { m_view.field_order->setEnabled(index == 2); });
     refreshView();
     focusFirstVisibleItem();
     adjustSize();
@@ -486,7 +493,7 @@ void RenderWidget::reloadGuides()
         if (!markers.isEmpty()) {
             m_view.guide_start->addItem(i18n("Beginning"), "0");
             m_view.create_chapter->setEnabled(true);
-            for (auto marker : markers) {
+            for (const auto &marker : qAsConst(markers)) {
                 GenTime pos = marker.time();
                 const QString guidePos = Timecode::getStringTimecode(pos.frames(fps), fps);
                 m_view.guide_start->addItem(marker.comment() + QLatin1Char('/') + guidePos, pos.seconds());
@@ -553,7 +560,11 @@ void RenderWidget::slotSaveProfile()
     ui.setupUi(d);
 
     QString customGroup;
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     QStringList arguments = m_view.advanced_params->toPlainText().split(' ', QString::SkipEmptyParts);
+#else
+    QStringList arguments = m_view.advanced_params->toPlainText().split(' ', Qt::SkipEmptyParts);
+#endif
     if (!arguments.isEmpty()) {
         ui.parameters->setText(arguments.join(QLatin1Char(' ')));
     }
@@ -790,7 +801,7 @@ int RenderWidget::getNewStuff(const QString &configFile)
     if (dialog->exec() != 0) {
         entries = dialog->changedEntries();
     }
-    for (const KNS3::Entry &entry : entries) {
+    for (const KNS3::Entry &entry : qAsConst(entries)) {
         if (entry.status() == KNS3::Entry::Installed) {
             qCDebug(KDENLIVE_LOG) << "// Installed files: " << entry.installedFiles();
         }
@@ -1069,7 +1080,7 @@ void RenderWidget::focusFirstVisibleItem(const QString &profile)
             }
         }
     }
-    if (item) {
+    if (item && item->parent()) {
         m_view.formats->setCurrentItem(item);
         item->parent()->setExpanded(true);
         refreshParams();
@@ -1149,9 +1160,6 @@ void RenderWidget::prepareRendering(bool delayedRendering, const QString &chapte
     emit selectedRenderProfile(renderProps);
 
     QString playlistPath;
-    QString mltSuffix(QStringLiteral(".mlt"));
-    QList<QString> playlistPaths;
-    QList<QString> trackNames;
     QString renderName;
 
     if (delayedRendering) {
@@ -1209,10 +1217,14 @@ void RenderWidget::prepareRendering(bool delayedRendering, const QString &chapte
         in = pMon->getZoneStart();
         out = pMon->getZoneEnd() - 1;
     } else {
-        out = pCore->projectDuration() - 2;
+        out = pCore->projectDuration() - 1;
+    }
+    QString overlayData;
+    if (m_view.tc_overlay->checkState() == Qt::Checked) {
+        overlayData = m_view.tc_type->currentData().toString();
     }
 
-    QString playlistContent = pCore->projectManager()->projectSceneList(project->url().adjusted(QUrl::RemoveFilename | QUrl::StripTrailingSlash).toLocalFile());
+    QString playlistContent = pCore->projectManager()->projectSceneList(project->url().adjusted(QUrl::RemoveFilename | QUrl::StripTrailingSlash).toLocalFile(), overlayData);
     if (!chapterFile.isEmpty()) {
         QDomDocument doc;
         QDomElement chapters = doc.createElement(QStringLiteral("chapters"));
@@ -1282,7 +1294,7 @@ void RenderWidget::prepareRendering(bool delayedRendering, const QString &chapte
         }
 
         // replace proxy clips with originals
-        QMap<QString, QString> proxies = pCore->projectItemModel()->getProxies(pCore->currentDoc()->documentRoot());
+        QMap<QString, QString> proxies = pCore->projectItemModel()->getProxies(root);
 
         QDomNodeList producers = doc.elementsByTagName(QStringLiteral("producer"));
         QString producerResource;
@@ -1400,6 +1412,8 @@ void RenderWidget::generateRenderFiles(QDomDocument doc, const QString &playlist
         consumer.setAttribute(QStringLiteral("in"), in);
         consumer.setAttribute(QStringLiteral("out"), out);
     }
+    // Audio Channels
+    consumer.setAttribute(QStringLiteral("channels"), pCore->audioChannels());
 
     // Check if the rendering profile is different from project profile,
     // in which case we need to use the producer_comsumer from MLT
@@ -1541,6 +1555,15 @@ void RenderWidget::generateRenderFiles(QDomDocument doc, const QString &playlist
     }
     QStringList playlists;
     QString renderedFile = m_view.out_file->url().toLocalFile();
+    if (m_view.advanced_params->toPlainText().simplified().contains("=stills/"))
+    {
+        // Image sequence, ensure we have a %0xd at file end
+        QString extension = renderedFile.section(QLatin1Char('.'), -1);
+        // format string for counter
+        if (!QRegExp(QStringLiteral(".*%[0-9]*d.*")).exactMatch(renderedFile)) {
+            renderedFile = renderedFile.section(QLatin1Char('.'), 0, -2) + QStringLiteral("_%05d.") + extension;
+        }
+    }
     for (int i = 0; i < passes; i++) {
         // Append consumer settings
         QDomDocument final = i > 0 ? clone : doc;
@@ -1560,7 +1583,7 @@ void RenderWidget::generateRenderFiles(QDomDocument doc, const QString &playlist
         if (renderArgs.contains(QStringLiteral("libx265"))) {
             if (pass == 1 || pass == 2) {
                 QString x265params = myConsumer.attribute("x265-params");
-                x265params = QString("pass=%1:stats=%2:%3").arg(pass).arg(mytarget.replace(":", "\\:") + "_2pass.log").arg(x265params);
+                x265params = QString("pass=%1:stats=%2:%3").arg(pass).arg(mytarget.replace(":", "\\:") + "_2pass.log", x265params);
                 myConsumer.setAttribute("x265-params", x265params);
             }
         } else {
@@ -1612,7 +1635,10 @@ void RenderWidget::generateRenderFiles(QDomDocument doc, const QString &playlist
             QStringList argsJob = {KdenliveSettings::rendererpath(), playlistPath, renderedFile,
                                    QStringLiteral("-pid:%1").arg(QCoreApplication::applicationPid())};
             renderItem->setData(1, ParametersRole, argsJob);
-            renderItem->setData(1, TimeRole, QDateTime::currentDateTime());
+            QDateTime t = QDateTime::currentDateTime();
+            renderItem->setData(1, StartTimeRole, t);
+            renderItem->setData(1, LastTimeRole, t);
+            renderItem->setData(1, LastFrameRole, in);
             if (!exportAudio) {
                 renderItem->setData(1, ExtraInfoRole, i18n("Video without audio track"));
             } else {
@@ -1629,9 +1655,12 @@ void RenderWidget::generateRenderFiles(QDomDocument doc, const QString &playlist
         return;
     }
     QList<RenderJobItem *> jobList;
-    for (const QString &pl : playlists) {
+    for (const QString &pl : qAsConst(playlists)) {
         renderItem = new RenderJobItem(m_view.running_jobs, QStringList() << QString() << renderedFile);
-        renderItem->setData(1, TimeRole, QDateTime::currentDateTime());
+        QDateTime t = QDateTime::currentDateTime();
+        renderItem->setData(1, StartTimeRole, t);
+        renderItem->setData(1, LastTimeRole, t);
+        renderItem->setData(1, LastFrameRole, in);
         QStringList argsJob = {KdenliveSettings::rendererpath(), pl, renderedFile, QStringLiteral("-pid:%1").arg(QCoreApplication::applicationPid())};
         renderItem->setData(1, ParametersRole, argsJob);
         qDebug() << "* CREATED JOB WITH ARGS: " << argsJob;
@@ -1649,7 +1678,11 @@ void RenderWidget::generateRenderFiles(QDomDocument doc, const QString &playlist
     checkRenderStatus();
 
     // create full playlistPaths
-    /*for (int i = 0; i < tracksCount; i++) {
+    /*
+    QString mltSuffix(QStringLiteral(".mlt"));
+    QList<QString> playlistPaths;
+    QList<QString> trackNames;
+    for (int i = 0; i < tracksCount; i++) {
         QString plPath(playlistPath);
 
         // add track number to path name
@@ -1702,7 +1735,9 @@ void RenderWidget::checkRenderStatus()
     // Find first waiting job
     while (item != nullptr) {
         if (item->status() == WAITINGJOB) {
-            item->setData(1, TimeRole, QDateTime::currentDateTime());
+            QDateTime t = QDateTime::currentDateTime();
+            item->setData(1, StartTimeRole, t);
+            item->setData(1, LastTimeRole, t);
             waitingJob = true;
             startRendering(item);
             // Check for 2 pass encoding
@@ -1865,7 +1900,7 @@ void RenderWidget::refreshView()
             }
             if (params.contains(QStringLiteral(" profile=")) || params.startsWith(QLatin1String("profile="))) {
                 // changed in MLT commit d8a3a5c9190646aae72048f71a39ee7446a3bd45
-                // (http://www.mltframework.org/gitweb/mlt.git?p=mltframework.org/mlt.git;a=commit;h=d8a3a5c9190646aae72048f71a39ee7446a3bd45)
+                // (https://github.com/mltframework/mlt/commit/d8a3a5c9190646aae72048f71a39ee7446a3bd45)
                 item->setData(0, ErrorRole,
                               i18n("This render profile uses a 'profile' parameter.<br />Unless you know what you are doing you will probably "
                                    "have to change it to 'mlt_profile'."));
@@ -1891,7 +1926,7 @@ QUrl RenderWidget::filenameWithExtension(QUrl url, const QString &extension)
     }
     QString ext;
 
-    if (extension.at(0) == '.') {
+    if (extension.startsWith(QLatin1Char('.'))) {
         ext = extension;
     } else {
         ext = '.' + extension;
@@ -1953,15 +1988,6 @@ void RenderWidget::refreshParams()
     }
     QUrl url = filenameWithExtension(m_view.out_file->url(), extension);
     m_view.out_file->setUrl(url);
-    //     if (!url.isEmpty()) {
-    //         QString path = url.path();
-    //         int pos = path.lastIndexOf('.') + 1;
-    //  if (pos == 0) path.append('.' + extension);
-    //         else path = path.left(pos) + extension;
-    //         m_view.out_file->setUrl(QUrl(path));
-    //     } else {
-    //         m_view.out_file->setUrl(QUrl(QDir::homePath() + QStringLiteral("/untitled.") + extension));
-    //     }
     m_view.out_file->setFilter("*." + extension);
     QString edit = item->data(0, EditableRole).toString();
     if (edit.isEmpty() || !edit.endsWith(QLatin1String("customprofiles.xml"))) {
@@ -2066,16 +2092,23 @@ void RenderWidget::parseProfiles(const QString &selectedProfile)
 
     // Parse some MLT's profiles
     parseMltPresets();
-
+    QStringList filter = {QStringLiteral("*.xml")};
+#ifdef Q_OS_WIN
+    // Windows downloaded profiles are saved in AppLocalDataLocation
+    QString localExportFolder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QStringLiteral("/export/");
+    QDir winDir(localExportFolder);
+    QStringList winFileList = winDir.entryList(filter, QDir::Files);
+    for (const QString &filename : winFileList) {
+        parseFile(winDir.absoluteFilePath(filename), true);
+    }
+#endif
     QString exportFolder = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/export/");
     QDir directory(exportFolder);
-    QStringList filter;
-    filter << QStringLiteral("*.xml");
     QStringList fileList = directory.entryList(filter, QDir::Files);
     // We should parse customprofiles.xml in last position, so that user profiles
     // can also override profiles installed by KNewStuff
     fileList.removeAll(QStringLiteral("customprofiles.xml"));
-    for (const QString &filename : fileList) {
+    for (const QString &filename : qAsConst(fileList)) {
         parseFile(directory.absoluteFilePath(filename), true);
     }
     if (QFile::exists(exportFolder + QStringLiteral("customprofiles.xml"))) {
@@ -2148,7 +2181,7 @@ void RenderWidget::parseMltPresets()
             groupItem->setExpanded(true);
         }
         QStringList profiles = root.entryList(QDir::Files, QDir::Name);
-        for (const QString &prof : profiles) {
+        for (const QString &prof : qAsConst(profiles)) {
             QTreeWidgetItem *item = loadFromMltPreset(groupName, root.absoluteFilePath(prof), prof);
             if (!item) {
                 continue;
@@ -2304,17 +2337,37 @@ void RenderWidget::parseFile(const QString &exportFile, bool editable)
             childitem->setData(0, StandardRole, standard);
             childitem->setData(0, ParamsRole, params);
             if (params.contains(QLatin1String("%quality"))) {
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
                 childitem->setData(0, BitratesRole, profile.attribute(QStringLiteral("qualities")).split(QLatin1Char(','), QString::SkipEmptyParts));
+#else
+                childitem->setData(0, BitratesRole, profile.attribute(QStringLiteral("qualities")).split(QLatin1Char(','), Qt::SkipEmptyParts));
+#endif
             } else if (params.contains(QLatin1String("%bitrate"))) {
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
                 childitem->setData(0, BitratesRole, profile.attribute(QStringLiteral("bitrates")).split(QLatin1Char(','), QString::SkipEmptyParts));
+#else
+                childitem->setData(0, BitratesRole, profile.attribute(QStringLiteral("bitrates")).split(QLatin1Char(','), Qt::SkipEmptyParts));
+#endif
             }
             if (params.contains(QLatin1String("%audioquality"))) {
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
                 childitem->setData(0, AudioBitratesRole, profile.attribute(QStringLiteral("audioqualities")).split(QLatin1Char(','), QString::SkipEmptyParts));
+#else
+                childitem->setData(0, AudioBitratesRole, profile.attribute(QStringLiteral("audioqualities")).split(QLatin1Char(','), Qt::SkipEmptyParts));
+#endif
             } else if (params.contains(QLatin1String("%audiobitrate"))) {
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
                 childitem->setData(0, AudioBitratesRole, profile.attribute(QStringLiteral("audiobitrates")).split(QLatin1Char(','), QString::SkipEmptyParts));
+#else
+                childitem->setData(0, AudioBitratesRole, profile.attribute(QStringLiteral("audiobitrates")).split(QLatin1Char(','), Qt::SkipEmptyParts));
+#endif
             }
             if (profile.hasAttribute(QStringLiteral("speeds"))) {
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
                 childitem->setData(0, SpeedsRole, profile.attribute(QStringLiteral("speeds")).split(QLatin1Char(';'), QString::SkipEmptyParts));
+#else
+                childitem->setData(0, SpeedsRole, profile.attribute(QStringLiteral("speeds")).split(QLatin1Char(';'), Qt::SkipEmptyParts));
+#endif
             }
             if (profile.hasAttribute(QStringLiteral("url"))) {
                 childitem->setData(0, ExtraRole, profile.attribute(QStringLiteral("url")));
@@ -2348,7 +2401,6 @@ void RenderWidget::parseFile(const QString &exportFile, bool editable)
 
     while (!groups.item(i).isNull()) {
         documentElement = groups.item(i).toElement();
-        QDomNode gname = documentElement.elementsByTagName(QStringLiteral("groupname")).at(0);
         groupName = documentElement.attribute(QStringLiteral("name"), i18nc("Attribute Name", "Custom"));
         extension = documentElement.attribute(QStringLiteral("extension"), QString());
         renderer = documentElement.attribute(QStringLiteral("renderer"), QString());
@@ -2393,18 +2445,38 @@ void RenderWidget::parseFile(const QString &exportFile, bool editable)
             item->setData(0, StandardRole, standard);
             item->setData(0, ParamsRole, params);
             if (params.contains(QLatin1String("%quality"))) {
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
                 item->setData(0, BitratesRole, profileElement.attribute(QStringLiteral("qualities")).split(QLatin1Char(','), QString::SkipEmptyParts));
+#else
+                item->setData(0, BitratesRole, profileElement.attribute(QStringLiteral("qualities")).split(QLatin1Char(','), Qt::SkipEmptyParts));
+#endif
             } else if (params.contains(QLatin1String("%bitrate"))) {
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
                 item->setData(0, BitratesRole, profileElement.attribute(QStringLiteral("bitrates")).split(QLatin1Char(','), QString::SkipEmptyParts));
+#else
+                item->setData(0, BitratesRole, profileElement.attribute(QStringLiteral("bitrates")).split(QLatin1Char(','), Qt::SkipEmptyParts));
+#endif
             }
             if (params.contains(QLatin1String("%audioquality"))) {
                 item->setData(0, AudioBitratesRole,
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
                               profileElement.attribute(QStringLiteral("audioqualities")).split(QLatin1Char(','), QString::SkipEmptyParts));
+#else
+                              profileElement.attribute(QStringLiteral("audioqualities")).split(QLatin1Char(','), Qt::SkipEmptyParts));
+#endif
             } else if (params.contains(QLatin1String("%audiobitrate"))) {
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
                 item->setData(0, AudioBitratesRole, profileElement.attribute(QStringLiteral("audiobitrates")).split(QLatin1Char(','), QString::SkipEmptyParts));
+#else
+                item->setData(0, AudioBitratesRole, profileElement.attribute(QStringLiteral("audiobitrates")).split(QLatin1Char(','), Qt::SkipEmptyParts));
+#endif
             }
             if (profileElement.hasAttribute(QStringLiteral("speeds"))) {
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
                 item->setData(0, SpeedsRole, profileElement.attribute(QStringLiteral("speeds")).split(QLatin1Char(';'), QString::SkipEmptyParts));
+#else
+                item->setData(0, SpeedsRole, profileElement.attribute(QStringLiteral("speeds")).split(QLatin1Char(';'), Qt::SkipEmptyParts));
+#endif
             }
             if (profileElement.hasAttribute(QStringLiteral("url"))) {
                 item->setData(0, ExtraRole, profileElement.attribute(QStringLiteral("url")));
@@ -2417,7 +2489,7 @@ void RenderWidget::parseFile(const QString &exportFile, bool editable)
     }
 }
 
-void RenderWidget::setRenderJob(const QString &dest, int progress)
+void RenderWidget::setRenderJob(const QString &dest, int progress, int frame)
 {
     RenderJobItem *item;
     QList<QTreeWidgetItem *> existing = m_view.running_jobs->findItems(dest, Qt::MatchExactly, 1);
@@ -2433,20 +2505,28 @@ void RenderWidget::setRenderJob(const QString &dest, int progress)
     item->setStatus(RUNNINGJOB);
     if (progress == 0) {
         item->setIcon(0, QIcon::fromTheme(QStringLiteral("media-record")));
-        item->setData(1, TimeRole, QDateTime::currentDateTime());
         slotCheckJob();
     } else {
-        QDateTime startTime = item->data(1, TimeRole).toDateTime();
+        QDateTime startTime = item->data(1, StartTimeRole).toDateTime();
         qint64 elapsedTime = startTime.secsTo(QDateTime::currentDateTime());
+        int dt = elapsedTime - item->data(1, LastTimeRole).toInt();
+        if (dt == 0) {
+            return;
+        }
         qint64 remaining = elapsedTime * (100 - progress) / progress;
-        int days = static_cast<int>(remaining / 86400);
-        int remainingSecs = static_cast<int>(remaining % 86400);
-        QTime when = QTime(0, 0, 0, 0);
-        when = when.addSecs(remainingSecs);
-        QString est = (days > 0) ? i18np("%1 day ", "%1 days ", days) : QString();
+        int days = int(remaining / 86400);
+        int remainingSecs = int(remaining % 86400);
+        QTime when = QTime(0, 0, 0, 0).addSecs(remainingSecs);
+        QString est = i18n("Remaining time ");
+        if (days > 0) {
+            est.append(i18np("%1 day ", "%1 days ", days));
+        }
         est.append(when.toString(QStringLiteral("hh:mm:ss")));
-        QString t = i18n("Remaining time %1", est);
-        item->setData(1, Qt::UserRole, t);
+        int speed = (frame - item->data(1, LastFrameRole).toInt()) / dt;
+        est.append(i18n(" (frame %1 @ %2 fps)", frame, speed));
+        item->setData(1, Qt::UserRole, est);
+        item->setData(1, LastTimeRole, elapsedTime);
+        item->setData(1, LastFrameRole, frame);
     }
 }
 
@@ -2465,7 +2545,7 @@ void RenderWidget::setRenderStatus(const QString &dest, int status, const QStrin
     if (status == -1) {
         // Job finished successfully
         item->setStatus(FINISHEDJOB);
-        QDateTime startTime = item->data(1, TimeRole).toDateTime();
+        QDateTime startTime = item->data(1, StartTimeRole).toDateTime();
         qint64 elapsedTime = startTime.secsTo(QDateTime::currentDateTime());
         int days = static_cast<int>(elapsedTime / 86400);
         int secs = static_cast<int>(elapsedTime % 86400);
@@ -2595,9 +2675,18 @@ void RenderWidget::parseScriptFiles()
     QTreeWidgetItem *item;
     // List the project scripts
     QDir projectFolder(pCore->currentDoc()->projectDataFolder());
-    projectFolder.mkpath(QStringLiteral("kdenlive-renderqueue"));
+    if (!projectFolder.exists(QStringLiteral("kdenlive-renderqueue"))) {
+        return;
+    }
     projectFolder.cd(QStringLiteral("kdenlive-renderqueue"));
     QStringList scriptFiles = projectFolder.entryList(scriptsFilter, QDir::Files);
+    if (scriptFiles.isEmpty()) {
+        // No scripts, delete directory
+        if (projectFolder.dirName() == QStringLiteral("kdenlive-renderqueue") && projectFolder.entryList(scriptsFilter, QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty()) {
+            projectFolder.removeRecursively();
+            return;
+        }
+    }
     for (int i = 0; i < scriptFiles.size(); ++i) {
         QUrl scriptpath = QUrl::fromLocalFile(projectFolder.absoluteFilePath(scriptFiles.at(i)));
         QFile f(scriptpath.toLocalFile());
@@ -2676,7 +2765,9 @@ void RenderWidget::slotStartScript()
         renderItem->setStatus(WAITINGJOB);
         renderItem->setIcon(0, QIcon::fromTheme(QStringLiteral("media-playback-pause")));
         renderItem->setData(1, Qt::UserRole, i18n("Waiting..."));
-        renderItem->setData(1, TimeRole, QDateTime::currentDateTime());
+        QDateTime t = QDateTime::currentDateTime();
+        renderItem->setData(1, StartTimeRole, t);
+        renderItem->setData(1, LastTimeRole, t);
         QStringList argsJob = {KdenliveSettings::rendererpath(), path, destination, QStringLiteral("-pid:%1").arg(QCoreApplication::applicationPid())};
         renderItem->setData(1, ParametersRole, argsJob);
         checkRenderStatus();
@@ -2822,7 +2913,7 @@ bool RenderWidget::startWaitingRenderJobs()
 
     QTextStream outStream(&file);
 #ifndef Q_OS_WIN
-    outStream << "#! /bin/sh" << '\n' << '\n';
+    outStream << "#!/bin/sh\n\n";
 #endif
     auto *item = static_cast<RenderJobItem *>(m_view.running_jobs->topLevelItem(0));
     while (item != nullptr) {
@@ -2986,6 +3077,15 @@ void RenderWidget::keyPressEvent(QKeyEvent *e)
             }
             break;
         }
+    } else if (e->key() == Qt::Key_Delete) {
+        // If in Scripts tab, let Del key invoke DeleteScript
+        if (m_view.tabWidget->currentIndex() == 2) {
+            if (m_view.delete_script->isEnabled()) {
+                slotDeleteScript();
+            }
+        } else {
+            QDialog::keyPressEvent(e);
+        }
     } else {
         QDialog::keyPressEvent(e);
     }
@@ -3082,4 +3182,24 @@ void RenderWidget::prepareMenu(const QPoint &pos)
     menu.addAction(newAct);
     
     menu.exec(m_view.running_jobs->mapToGlobal(pos));
+}
+
+void RenderWidget::resetRenderPath(const QString &path)
+{
+    QTreeWidgetItem *item = m_view.formats->currentItem();
+    QString extension;
+    if (item && item->parent()) { // categories have no parent
+        extension = item->data(0, ExtensionRole).toString();
+    } else {
+        extension = m_view.out_file->url().toLocalFile().section(QLatin1Char('.'), -1);
+    }
+    QString fileName = QDir(pCore->currentDoc()->projectDataFolder()).absoluteFilePath(path + extension);
+    QString url = filenameWithExtension(QUrl::fromLocalFile(fileName), extension).toLocalFile();
+    if (QFileInfo(url).isRelative()) {
+        url.prepend(pCore->currentDoc()->documentRoot());
+    }
+    m_view.out_file->setUrl(QUrl::fromLocalFile(url));
+    QMap<QString, QString> renderProps;
+    renderProps.insert(QStringLiteral("renderurl"), url);
+    emit selectedRenderProfile(renderProps);
 }

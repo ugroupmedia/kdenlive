@@ -81,16 +81,21 @@ private slots:
     void slotCopyKeyframes();
     void slotImportKeyframes();
     void slotRemoveNextKeyframes();
+    void slotSeekToKeyframe(int ix);
 
 private:
     QVBoxLayout *m_lay;
     QToolBar *m_toolbar;
     std::shared_ptr<KeyframeModelList> m_keyframes;
+    QMetaObject::Connection m_focusConnection;
     KeyframeView *m_keyframeview;
     KeyframeMonitorHelper *m_monitorHelper;
     QToolButton *m_buttonAddDelete;
     QToolButton *m_buttonPrevious;
     QToolButton *m_buttonNext;
+    QToolButton *m_buttonCenter;
+    QToolButton *m_buttonCopy;
+    QToolButton *m_buttonApply;
     KSelectAction *m_selectType;
     TimecodeDisplay *m_time;
     MonitorSceneType m_neededScene;
@@ -99,10 +104,12 @@ private:
     std::unordered_map<QPersistentModelIndex, QWidget *> m_parameters;
     int m_baseHeight;
     int m_addedHeight;
+    QString m_lastFocusedParam;
 
 signals:
     void addIndex(QPersistentModelIndex ix);
     void setKeyframes(const QString &);
+    void updateEffectKeyframe(bool);
 };
 
 #endif

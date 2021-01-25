@@ -35,7 +35,7 @@
 #include <klocalizedstring.h>
 
 ProxyJob::ProxyJob(const QString &binId)
-    : AbstractClipJob(PROXYJOB, binId)
+    : AbstractClipJob(PROXYJOB, binId, {ObjectType::BinClip, binId.toInt()})
     , m_jobDuration(0)
     , m_isFfmpegJob(true)
     , m_jobProcess(nullptr)
@@ -100,7 +100,11 @@ bool ProxyJob::startJob()
                 parameter.prepend(QStringLiteral("-pix_fmt yuv420p"));
             }
         }
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
         QStringList params = parameter.split(QLatin1Char('-'), QString::SkipEmptyParts);
+#else
+        QStringList params = parameter.split(QLatin1Char('-'), Qt::SkipEmptyParts);
+#endif
         double display_ratio;
         if (source.startsWith(QLatin1String("consumer:"))) {
             display_ratio = KdenliveDoc::getDisplayRatio(source.section(QLatin1Char(':'), 1));
@@ -112,7 +116,7 @@ bool ProxyJob::startJob()
         }
 
         bool skipNext = false;
-        for (const QString &s : params) {
+        for (const QString &s : qAsConst(params)) {
             QString t = s.simplified();
             if (skipNext) {
                 skipNext = false;
@@ -151,7 +155,7 @@ bool ProxyJob::startJob()
         mltParameters.append(QStringLiteral("terminate_on_pause=1"));
 
         // TODO: currently, when rendering an xml file through melt, the display ration is lost, so we enforce it manually
-        mltParameters << QStringLiteral("aspect=") + QLocale().toString(display_ratio);
+        mltParameters << QStringLiteral("aspect=") + QString::number(display_ratio, 'f');
 
         // Ask for progress reporting
         mltParameters << QStringLiteral("progress=1");
@@ -185,7 +189,7 @@ bool ProxyJob::startJob()
         if (exif > 1) {
             // Rotate image according to exif data
             QImage processed;
-            QMatrix matrix;
+            QTransform matrix;
 
             switch (exif) {
             case 2:
@@ -221,13 +225,13 @@ bool ProxyJob::startJob()
         return true;
     } else {
         m_isFfmpegJob = true;
-        if (KdenliveSettings::ffmpegpath().isEmpty()) {
+        if (!QFileInfo(KdenliveSettings::ffmpegpath()).isFile()) {
             // FFmpeg not detected, cannot process the Job
             m_errorMessage.prepend(i18n("Failed to create proxy. FFmpeg not found, please set path in Kdenlive's settings Environment"));
             m_done = true;
             return false;
         }
-        // Only output error data
+        // Only output error data, make sure we don't block when proxy file already exists
         QStringList parameters = {QStringLiteral("-hide_banner"), QStringLiteral("-y"), QStringLiteral("-stats"), QStringLiteral("-v"), QStringLiteral("error")};
         m_jobDuration = (int)binClip->duration().seconds();
         QString proxyParams = pCore->currentDoc()->getDocumentProperty(QStringLiteral("proxyparams")).simplified();
@@ -270,7 +274,11 @@ bool ProxyJob::startJob()
             parameters << QStringLiteral("-i") << source;
         }
         QString params = proxyParams;
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
         for (const QString &s : params.split(QLatin1Char(' '), QString::SkipEmptyParts)) {
+#else
+        for (const QString &s : params.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+#endif
             QString t = s.simplified();
             if (t != QLatin1String("-noautorotate")) {
                 parameters << t;
@@ -280,9 +288,10 @@ bool ProxyJob::startJob()
             }
         }
 
-        // Make sure we don't block when proxy file already exists
+        // Make sure we keep the stream order
+        parameters << QStringLiteral("-sn") << QStringLiteral("-dn") << QStringLiteral("-map") << QStringLiteral("0");
         parameters << dest;
-         qDebug()<<"/// FULL PROXY PARAMS:\n"<<parameters<<"\n------";
+        qDebug()<<"/// FULL PROXY PARAMS:\n"<<parameters<<"\n------";
         m_jobProcess = new QProcess;
         // m_jobProcess->setProcessChannelMode(QProcess::MergedChannels);
         connect(m_jobProcess, &QProcess::readyReadStandardError, this, &ProxyJob::processLogInfo);
@@ -368,14 +377,14 @@ bool ProxyJob::commitResult(Fun &undo, Fun &redo)
         binClip->setProducerProperty(QStringLiteral("_overwriteproxy"), QString());
         const QString dest = binClip->getProducerProperty(QStringLiteral("kdenlive:proxy"));
         binClip->setProducerProperty(QStringLiteral("resource"), dest);
-        pCore->bin()->reloadClip(clipId, false);
+        pCore->bin()->reloadClip(clipId);
         return true;
     };
     auto reverse = [clipId = m_clipId]() {
         auto binClip = pCore->projectItemModel()->getClipByBinID(clipId);
         const QString dest = binClip->getProducerProperty(QStringLiteral("kdenlive:originalurl"));
         binClip->setProducerProperty(QStringLiteral("resource"), dest);
-        pCore->bin()->reloadClip(clipId, false);
+        pCore->bin()->reloadClip(clipId);
         return true;
     };
     bool ok = operation();

@@ -110,7 +110,7 @@ bool ThumbnailCache::hasThumbnail(const QString &binId, int pos, bool volatileOn
 {
     QMutexLocker locker(&m_mutex);
     bool ok = false;
-    auto key = pos < 0 ? getAudioKey(binId, &ok) : getKey(binId, pos, &ok);
+    auto key = pos < 0 ? getAudioKey(binId, &ok).first() : getKey(binId, pos, &ok);
     if (ok && m_volatileCache->contains(key)) {
         return true;
     }
@@ -125,7 +125,7 @@ QImage ThumbnailCache::getAudioThumbnail(const QString &binId, bool volatileOnly
 {
     QMutexLocker locker(&m_mutex);
     bool ok = false;
-    auto key = getAudioKey(binId, &ok);
+    auto key = getAudioKey(binId, &ok).first();
     if (ok && m_volatileCache->contains(key)) {
         return m_volatileCache->get(key);
     }
@@ -140,16 +140,21 @@ QImage ThumbnailCache::getAudioThumbnail(const QString &binId, bool volatileOnly
     return QImage();
 }
 
-const QUrl ThumbnailCache::getAudioThumbPath(const QString &binId) const
+const QList <QUrl> ThumbnailCache::getAudioThumbPath(const QString &binId) const
 {
     QMutexLocker locker(&m_mutex);
     bool ok = false;
     auto key = getAudioKey(binId, &ok);
     QDir thumbFolder = getDir(true, &ok);
-    if (ok && thumbFolder.exists(key)) {
-        return QUrl::fromLocalFile(thumbFolder.absoluteFilePath(key));
+    QList <QUrl> pathList;
+    if (ok) {
+        for (const QString &p : qAsConst(key)) {
+            if (thumbFolder.exists(p)) {
+                pathList <<QUrl::fromLocalFile(thumbFolder.absoluteFilePath(p));
+            }
+        }
     }
-    return QUrl();
+    return pathList;
 }
 
 QImage ThumbnailCache::getThumbnail(const QString &binId, int pos, bool volatileOnly) const
@@ -183,7 +188,7 @@ void ThumbnailCache::storeThumbnail(const QString &binId, int pos, const QImage 
         QDir thumbFolder = getDir(false, &ok);
         if (ok) {
             if (!img.save(thumbFolder.absoluteFilePath(key))) {
-                qDebug() << ".............\nAAAAAAAAAAAARGH ERROR SAVING THUMB";
+                qDebug() << ".............\n!!!!!!!! ERROR SAVING THUMB in: "<<thumbFolder.absoluteFilePath(key);
             }
             m_storedOnDisk[binId].push_back(pos);
             // if volatile cache also contains this entry, update it
@@ -218,7 +223,7 @@ void ThumbnailCache::saveCachedThumbs(QStringList keys)
     }
 }
 
-void ThumbnailCache::invalidateThumbsForClip(const QString &binId, bool reloadAudio)
+void ThumbnailCache::invalidateThumbsForClip(const QString &binId)
 {
     QMutexLocker locker(&m_mutex);
     if (m_storedVolatile.find(binId) != m_storedVolatile.end()) {
@@ -238,14 +243,7 @@ void ThumbnailCache::invalidateThumbsForClip(const QString &binId, bool reloadAu
     if (ok && m_storedOnDisk.find(binId) != m_storedOnDisk.end()) {
         // Remove persistent cache
         for (int pos : m_storedOnDisk.at(binId)) {
-            if (pos < 0) {
-                if (reloadAudio) {
-                    auto key = getAudioKey(binId, &ok);
-                    if (ok) {
-                        QFile::remove(audioThumbFolder.absoluteFilePath(key));
-                    }
-                }
-            } else {
+            if (pos >= 0) {
                 auto key = getKey(binId, pos, &ok);
                 if (ok) {
                     QFile::remove(thumbFolder.absoluteFilePath(key));
@@ -273,15 +271,42 @@ QString ThumbnailCache::getKey(const QString &binId, int pos, bool *ok)
     }
     auto binClip = pCore->projectItemModel()->getClipByBinID(binId);
     *ok = binClip != nullptr;
-    return *ok ? binClip->hash() + QLatin1Char('#') + QString::number(pos) + QStringLiteral(".png") : QString();
+    return *ok ? binClip->hash() + QLatin1Char('#') + QString::number(pos) + QStringLiteral(".jpg") : QString();
 }
 
 // static
-QString ThumbnailCache::getAudioKey(const QString &binId, bool *ok)
+QStringList ThumbnailCache::getAudioKey(const QString &binId, bool *ok)
 {
     auto binClip = pCore->projectItemModel()->getClipByBinID(binId);
     *ok = binClip != nullptr;
-    return *ok ? binClip->hash() + QStringLiteral(".png") : QString();
+    if (ok) {
+        QString streams = binClip->getProducerProperty(QStringLiteral("kdenlive:active_streams"));
+        if (streams == QString::number(INT_MAX)) {
+            // activate all audio streams
+            QList <int> streamIxes = binClip->audioStreams().keys();
+            if (streamIxes.size() > 1) {
+                QStringList streamsList;
+                for (const int st : qAsConst(streamIxes)) {
+                    streamsList << QString("%1_%2.png").arg(binClip->hash()).arg(st);
+                }
+                return streamsList;
+            }
+        }
+        if (streams.size() < 2) {
+            int audio = binClip->getProducerIntProperty(QStringLiteral("audio_index"));
+            if (audio > -1) {
+                return {QString("%1_%2.png").arg(binClip->hash()).arg(audio)};
+            }
+            return {binClip->hash() + QStringLiteral(".png")};
+        }
+        QStringList streamsList;
+        QStringList streamIndexes = streams.split(QLatin1Char(';'));
+        for (const QString &st : qAsConst(streamIndexes)) {
+            streamsList << QString("%1_%2.png").arg(binClip->hash(), st);
+        }
+        return streamsList;
+    }
+    return {};
 }
 
 // static
