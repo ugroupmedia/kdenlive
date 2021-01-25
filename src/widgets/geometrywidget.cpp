@@ -44,7 +44,7 @@ GeometryWidget::GeometryWidget(Monitor *monitor, QPair<int, int> range, const QR
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     m_defaultSize = pCore->getCurrentFrameSize();
-    m_sourceSize = frameSize.isValid() ? frameSize : m_defaultSize;
+    m_sourceSize = (frameSize.isValid() && !frameSize.isNull()) ? frameSize : m_defaultSize;
     /*QString paramName = i18n(paramTag.toUtf8().data());
     QString comment = m_model->data(ix, AssetParameterModel::CommentRole).toString();
     if (!comment.isEmpty()) {
@@ -56,14 +56,17 @@ GeometryWidget::GeometryWidget(Monitor *monitor, QPair<int, int> range, const QR
     m_spinX = new DragValue(i18nc("x axis position", "X"), 0, 0, -99000, 99000, -1, QString(), false, false, this);
     connect(m_spinX, &DragValue::valueChanged, this, &GeometryWidget::slotAdjustRectKeyframeValue);
     horLayout->addWidget(m_spinX);
+    m_spinX->setObjectName("spinX");
 
     m_spinY = new DragValue(i18nc("y axis position", "Y"), 0, 0, -99000, 99000, -1, QString(), false, false, this);
     connect(m_spinY, &DragValue::valueChanged, this, &GeometryWidget::slotAdjustRectKeyframeValue);
     horLayout->addWidget(m_spinY);
+    m_spinY->setObjectName("spinY");
 
     m_spinWidth = new DragValue(i18nc("Frame width", "W"), m_defaultSize.width(), 0, 1, 99000, -1, QString(), false, false, this);
     connect(m_spinWidth, &DragValue::valueChanged, this, &GeometryWidget::slotAdjustRectWidth);
     horLayout->addWidget(m_spinWidth);
+    m_spinWidth->setObjectName("spinW");
 
     // Lock ratio stuff
     m_lockRatio = new QAction(QIcon::fromTheme(QStringLiteral("link")), i18n("Lock aspect ratio"), this);
@@ -75,6 +78,7 @@ GeometryWidget::GeometryWidget(Monitor *monitor, QPair<int, int> range, const QR
 
     m_spinHeight = new DragValue(i18nc("Frame height", "H"), m_defaultSize.height(), 0, 1, 99000, -1, QString(), false, false, this);
     connect(m_spinHeight, &DragValue::valueChanged, this, &GeometryWidget::slotAdjustRectHeight);
+    m_spinHeight->setObjectName("spinH");
     horLayout->addWidget(m_spinHeight);
     horLayout->addStretch(10);
 
@@ -82,13 +86,15 @@ GeometryWidget::GeometryWidget(Monitor *monitor, QPair<int, int> range, const QR
     horLayout2->setSpacing(2);
     m_spinSize = new DragValue(i18n("Size"), 100, 2, 1, 99000, -1, i18n("%"), false, false, this);
     m_spinSize->setStep(5);
+    m_spinSize->setObjectName("spinS");
     connect(m_spinSize, &DragValue::valueChanged, this, &GeometryWidget::slotResize);
     horLayout2->addWidget(m_spinSize);
 
     if (useOpacity) {
         m_opacity = new DragValue(i18n("Opacity"), 100, 0, 0, 100, -1, i18n("%"), true, false, this);
         m_opacity->setValue((int)(opacity * m_opacityFactor));
-        connect(m_opacity, &DragValue::valueChanged, [&]() { emit valueChanged(getValue()); });
+        connect(m_opacity, &DragValue::valueChanged, this, [&]() { emit valueChanged(getValue()); });
+        m_opacity->setObjectName("spinO");
         horLayout2->addWidget(m_opacity);
     }
     horLayout2->addStretch(10);
@@ -175,7 +181,7 @@ GeometryWidget::GeometryWidget(Monitor *monitor, QPair<int, int> range, const QR
     layout->addLayout(horLayout2);
     slotUpdateGeometryRect(rect);
     slotAdjustRectKeyframeValue();
-    setMinimumHeight(m_spinX->minimumHeight() + alignButton->sizeHint().height() + m_spinSize->minimumHeight());
+    setMinimumHeight(horLayout->sizeHint().height() + horLayout2->sizeHint().height() + alignLayout->sizeHint().height());
 }
 
 void GeometryWidget::slotAdjustToSource()
@@ -196,29 +202,24 @@ void GeometryWidget::slotAdjustToFrameSize()
 {
     double monitorDar = pCore->getCurrentDar();
     double sourceDar = m_sourceSize.width() / m_sourceSize.height();
-    m_spinWidth->blockSignals(true);
-    m_spinHeight->blockSignals(true);
+    QSignalBlocker bk1(m_spinWidth);
+    QSignalBlocker bk2(m_spinHeight);
     if (sourceDar > monitorDar) {
         // Fit to width
         double factor = (double)m_defaultSize.width() / m_sourceSize.width() * pCore->getCurrentSar();
         m_spinHeight->setValue((int)(m_sourceSize.height() * factor + 0.5));
         m_spinWidth->setValue(m_defaultSize.width());
-        // Center
-        m_spinY->blockSignals(true);
-        m_spinY->setValue((m_defaultSize.height() - m_spinHeight->value()) / 2);
-        m_spinY->blockSignals(false);
     } else {
         // Fit to height
         double factor = (double)m_defaultSize.height() / m_sourceSize.height();
         m_spinHeight->setValue(m_defaultSize.height());
         m_spinWidth->setValue((int)(m_sourceSize.width() / pCore->getCurrentSar() * factor + 0.5));
-        // Center
-        m_spinX->blockSignals(true);
-        m_spinX->setValue((m_defaultSize.width() - m_spinWidth->value()) / 2);
-        m_spinX->blockSignals(false);
     }
-    m_spinWidth->blockSignals(false);
-    m_spinHeight->blockSignals(false);
+    // Center
+    QSignalBlocker bk3(m_spinX);
+    QSignalBlocker bk4(m_spinY);
+    m_spinX->setValue((m_defaultSize.width() - m_spinWidth->value()) / 2);
+    m_spinY->setValue((m_defaultSize.height() - m_spinHeight->value()) / 2);
     slotAdjustRectKeyframeValue();
 }
 
@@ -246,14 +247,18 @@ void GeometryWidget::slotFitToHeight()
 }
 void GeometryWidget::slotResize(double value)
 {
-    m_spinWidth->blockSignals(true);
-    m_spinHeight->blockSignals(true);
-    int w = m_originalSize->isChecked() ? m_sourceSize.width() : m_defaultSize.width();
-    int h = m_originalSize->isChecked() ? m_sourceSize.height() : m_defaultSize.height();
-    m_spinWidth->setValue(w * value / 100.0);
-    m_spinHeight->setValue(h * value / 100.0);
-    m_spinWidth->blockSignals(false);
-    m_spinHeight->blockSignals(false);
+    QSignalBlocker bkh(m_spinHeight);
+    QSignalBlocker bkw(m_spinWidth);
+    QSignalBlocker bkx(m_spinX);
+    QSignalBlocker bky(m_spinY);
+    int w = (m_originalSize->isChecked() ? m_sourceSize.width() : m_defaultSize.width()) * value / 100.0;
+    int h = (m_originalSize->isChecked() ? m_sourceSize.height() : m_defaultSize.height()) * value / 100.0;
+    int delta_x = (m_spinWidth->value() - w) / 2;
+    int delta_y = (m_spinHeight->value() - h) / 2;
+    m_spinWidth->setValue(w);
+    m_spinHeight->setValue(h);
+    m_spinX->setValue(m_spinX->value() + delta_x);
+    m_spinY->setValue(m_spinY->value() + delta_y);
     slotAdjustRectKeyframeValue();
 }
 
@@ -356,7 +361,7 @@ void GeometryWidget::adjustSizeValue()
 void GeometryWidget::slotAdjustRectKeyframeValue()
 {
     QRect rect(m_spinX->value(), m_spinY->value(), m_spinWidth->value(), m_spinHeight->value());
-    m_monitor->setUpEffectGeometry(rect);
+    updateMonitorGeometry(rect);
     emit valueChanged(getValue());
 }
 
@@ -377,7 +382,7 @@ void GeometryWidget::slotUpdateGeometryRect(const QRect r)
     m_spinY->blockSignals(false);
     m_spinWidth->blockSignals(false);
     m_spinHeight->blockSignals(false);
-    m_monitor->setUpEffectGeometry(r);
+    updateMonitorGeometry(r);
     adjustSizeValue();
     emit valueChanged(getValue());
 }
@@ -408,20 +413,18 @@ void GeometryWidget::setValue(const QRect r, double opacity)
     m_spinWidth->blockSignals(false);
     m_spinHeight->blockSignals(false);
     adjustSizeValue();
-    m_monitor->setUpEffectGeometry(r);
+    updateMonitorGeometry(r);
 }
 
 const QString GeometryWidget::getValue() const
 {
     if (m_opacity) {
-        QLocale locale;
-        locale.setNumberOptions(QLocale::OmitGroupSeparator);
         return QStringLiteral("%1 %2 %3 %4 %5")
             .arg(m_spinX->value())
             .arg(m_spinY->value())
             .arg(m_spinWidth->value())
             .arg(m_spinHeight->value())
-            .arg(locale.toString(m_opacity->value() / m_opacityFactor));
+            .arg(QString::number(m_opacity->value() / m_opacityFactor, 'f'));
     }
     return QStringLiteral("%1 %2 %3 %4").arg(m_spinX->value()).arg(m_spinY->value()).arg(m_spinWidth->value()).arg(m_spinHeight->value());
 }
@@ -435,7 +438,7 @@ void GeometryWidget::connectMonitor(bool activate)
     if (activate) {
         connect(m_monitor, &Monitor::effectChanged, this, &GeometryWidget::slotUpdateGeometryRect, Qt::UniqueConnection);
         QRect rect(m_spinX->value(), m_spinY->value(), m_spinWidth->value(), m_spinHeight->value());
-        m_monitor->setUpEffectGeometry(rect);
+        updateMonitorGeometry(rect);
     } else {
         m_monitor->setEffectKeyframe(false);
         disconnect(m_monitor, &Monitor::effectChanged, this, &GeometryWidget::slotUpdateGeometryRect);

@@ -94,6 +94,9 @@ protected:
     QMenu *m_presetMenu;
     std::shared_ptr<QActionGroup> m_presetGroup;
 
+private:
+    QVector<QPair<QString, QVariant>> getDefaultValues() const;
+
 private slots:
     /** @brief Apply a change of parameter sent by the view
        @param index is the index corresponding to the modified param
@@ -102,7 +105,6 @@ private slots:
     */
     void commitChanges(const QModelIndex &index, const QString &value, bool storeUndo);
     void commitMultipleChanges(const QList <QModelIndex> indexes, const QStringList &values, bool storeUndo);
-    QVector<QPair<QString, QVariant>> getDefaultValues() const;
 
 signals:
     void seekToPos(int);
@@ -110,6 +112,7 @@ signals:
     /** @brief clear and refill the effect presets */
     void updatePresets(const QString &presetName = QString());
     void updateHeight();
+    void activateEffect();
 };
 
 #endif

@@ -35,7 +35,7 @@
 #include <klocalizedstring.h>
 
 TranscodeJob::TranscodeJob(const QString &binId, QString params)
-    : AbstractClipJob(TRANSCODEJOB, binId)
+    : AbstractClipJob(TRANSCODEJOB, binId, {ObjectType::BinClip, binId.toInt()})
     , m_jobDuration(0)
     , m_isFfmpegJob(true)
     , m_jobProcess(nullptr)
@@ -84,9 +84,13 @@ bool TranscodeJob::startJob()
         // insert transcoded filename
         m_transcodeParams.replace(QStringLiteral("%1"), QString("-consumer %1"));
         // Convert param style
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
         QStringList params = m_transcodeParams.split(QLatin1Char('-'), QString::SkipEmptyParts);
+#else
+        QStringList params = m_transcodeParams.split(QLatin1Char('-'), Qt::SkipEmptyParts);
+#endif
         QStringList mltParameters;
-        for (const QString &s : params) {
+        for (const QString &s : qAsConst(params)) {
             QString t = s.simplified();
             if (t.count(QLatin1Char(' ')) == 0) {
                 t.append(QLatin1String("=1"));
@@ -118,6 +122,10 @@ bool TranscodeJob::startJob()
 
         // Ask for progress reporting
         mltParameters << QStringLiteral("progress=1");
+        if (m_outPoint > 0) {
+            mltParameters.prepend(QString("out=%1").arg(m_outPoint));
+            mltParameters.prepend(QString("in=%1").arg(m_inPoint));
+        }
         mltParameters.prepend(source);
         m_jobProcess = new QProcess;
         // m_jobProcess->setProcessChannelMode(QProcess::MergedChannels);
@@ -136,13 +144,19 @@ bool TranscodeJob::startJob()
             return false;
         }
         m_jobDuration = (int)binClip->duration().seconds();
-        //parameters << QStringLiteral("-y");
+        parameters << QStringLiteral("-y");
+        if (m_inPoint > -1) {
+            parameters << QStringLiteral("-ss") << QString::number(GenTime(m_inPoint, pCore->getCurrentFps()).seconds());
+        }
         parameters << QStringLiteral("-stats") << QStringLiteral("-i") << source;
+        if (m_outPoint > -1) {
+            parameters << QStringLiteral("-to") << QString::number(GenTime(m_outPoint - m_inPoint, pCore->getCurrentFps()).seconds());
+        }
         // Only output error data
         parameters << QStringLiteral("-v") << QStringLiteral("error");
         QStringList params = m_transcodeParams.split(QLatin1Char(' '));
         QStringList finalParams{QStringLiteral("-i"),source};
-        for (const QString &s : params) {
+        for (const QString &s : qAsConst(params)) {
             QString t = s.simplified();
             if (t.startsWith(QLatin1String("%1"))) {
                 parameters << t.replace(QLatin1String("%1"), m_destUrl);

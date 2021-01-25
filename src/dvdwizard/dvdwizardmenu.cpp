@@ -412,9 +412,9 @@ void DvdWizardMenu::changeProfile(DVDFORMAT format)
 void DvdWizardMenu::updatePreview()
 {
     m_scene->setProfile(m_width, m_height);
-    QMatrix matrix;
+    QTransform matrix;
     matrix.scale(0.5, 0.5);
-    m_view.menu_preview->setMatrix(matrix);
+    m_view.menu_preview->setTransform(matrix);
     m_view.menu_preview->setMinimumSize(m_width / 2 + 4, m_height / 2 + 8);
 
     if (m_color) {
@@ -468,7 +468,7 @@ void DvdWizardMenu::checkBackgroundType(int ix)
                 m_scene->removeItem(m_background);
             }
             m_view.background_image->clear();
-            m_view.background_image->setFilter(QStringLiteral("video/mpeg"));
+            m_view.background_image->setMimeTypeFilters({QStringLiteral("video/mpeg")});
             m_view.loop_movie->setVisible(true);
         }
     }

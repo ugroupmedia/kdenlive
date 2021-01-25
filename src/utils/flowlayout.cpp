@@ -42,6 +42,7 @@
 #include <QWidget>
 #include <QDebug>
 #include <QtMath>
+#include <QTimer>
 
 FlowLayout::FlowLayout(QWidget *parent, int margin, int hSpacing, int vSpacing)
     : QLayout(parent)
@@ -55,6 +56,7 @@ FlowLayout::FlowLayout(QWidget *parent, int margin, int hSpacing, int vSpacing)
 FlowLayout::FlowLayout(int margin, int hSpacing, int vSpacing)
     : m_hSpace(hSpacing)
     , m_vSpace(vSpacing)
+    , m_minimumSize(200, 200)
 {
     setContentsMargins(margin, margin, margin, margin);
 }
@@ -108,7 +110,7 @@ QLayoutItem *FlowLayout::takeAt(int index)
 
 Qt::Orientations FlowLayout::expandingDirections() const
 {
-    return nullptr;
+    return Qt::Horizontal | Qt::Vertical;
 }
 
 bool FlowLayout::hasHeightForWidth() const
@@ -124,6 +126,9 @@ int FlowLayout::heightForWidth(int width) const
 
 void FlowLayout::setGeometry(const QRect &rect)
 {
+    if (m_itemList.size() < 3) {
+        return;
+    }
     doLayout(rect, false);
     QLayout::setGeometry(rect);
 }
@@ -140,29 +145,29 @@ QSize FlowLayout::minimumSize() const
 
 int FlowLayout::doLayout(const QRect &rect, bool testOnly) const
 {
-    int left, top, right, bottom;
-    getContentsMargins(&left, &top, &right, &bottom);
-    QRect effectiveRect = rect.adjusted(+left, +top, -right, -bottom);
+    QMargins mrg = contentsMargins();
+    QRect effectiveRect = rect.adjusted(mrg.left(), mrg.top(), -mrg.right(), -mrg.bottom());
+    if (m_itemList.isEmpty() || effectiveRect.width() <= 0) {
+        return 0;
+    }
     int x = effectiveRect.x();
     int y = effectiveRect.y();
     int itemCount = 0;
-    if (m_itemList.isEmpty() || effectiveRect.width() <= 0 || effectiveRect.height() <= 0) {
-        return 0;
-    }
-    
     QWidget *wid = m_itemList.at(0)->widget();
     QSize min = wid->minimumSize();
     int columns = qMin(qFloor((double)rect.width() / min.width()), m_itemList.size());
-    int realWidth = rect.width() / columns - horizontalSpacing();
-    int totalHeight = y - rect.y() + bottom + qCeil((double)m_itemList.size() / columns) * (realWidth + verticalSpacing());
-    m_minimumSize = QSize(rect.width(), totalHeight);
+    columns = qMax(1, columns);
+    int realWidth = qMin(wid->maximumWidth(), rect.width() / columns - horizontalSpacing());
+    realWidth -= realWidth % 40;
+    realWidth = qMax(realWidth, wid->minimumWidth());
+    int totalHeight = y - rect.y() + mrg.bottom() + qCeil((double)m_itemList.size() / columns) * (realWidth + verticalSpacing());
+    m_minimumSize = QSize(columns * realWidth, totalHeight);
+    QSize hint = QSize(realWidth, realWidth);
     if (testOnly) {
         return totalHeight;
     }
     for (QLayoutItem *item : m_itemList) {
         // We consider all items have the same dimensions
-        wid = item->widget();
-        QSize hint = QSize(qMin(wid->maximumWidth(), realWidth), qMin(wid->maximumWidth(), realWidth));
         item->setGeometry(QRect(QPoint(x, y), hint));
         itemCount++;
         //qDebug()<<"=== ITEM: "<<itemCount<<", POS: "<<x<<"x"<<y<<", SIZE: "<<hint;

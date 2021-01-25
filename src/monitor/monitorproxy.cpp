@@ -40,6 +40,7 @@ MonitorProxy::MonitorProxy(GLWidget *parent)
     , m_zoneOut(-1)
     , m_hasAV(false)
     , m_clipType(0)
+    , m_clipId(-1)
     , m_seekFinished(true)
 {
 }
@@ -52,6 +53,16 @@ int MonitorProxy::getPosition() const
 int MonitorProxy::rulerHeight() const
 {
     return q->m_rulerHeight;
+}
+
+void MonitorProxy::setRulerHeight(int addedHeight)
+{
+    q->updateRulerHeight(addedHeight);
+}
+
+void MonitorProxy::seek(int delta, uint modifiers)
+{
+    emit q->mouseSeek(delta, modifiers);
 }
 
 int MonitorProxy::overlayType() const
@@ -134,20 +145,30 @@ void MonitorProxy::setZoneIn(int pos)
         emit addSnap(pos);
     }
     emit zoneChanged();
-    emit saveZone();
+    emit saveZone(QPoint(m_zoneIn, m_zoneOut));
 }
 
 void MonitorProxy::setZoneOut(int pos)
 {
     if (m_zoneOut > 0) {
-        emit removeSnap(m_zoneOut);
+        emit removeSnap(m_zoneOut - 1);
     }
     m_zoneOut = pos;
     if (pos > 0) {
-        emit addSnap(pos);
+        emit addSnap(m_zoneOut - 1);
     }
     emit zoneChanged();
-    emit saveZone();
+    emit saveZone(QPoint(m_zoneIn, m_zoneOut));
+}
+
+void MonitorProxy::startZoneMove()
+{
+    m_undoZone = QPoint(m_zoneIn, m_zoneOut);
+}
+
+void MonitorProxy::endZoneMove()
+{
+    emit saveZoneWithUndo(m_undoZone, QPoint(m_zoneIn, m_zoneOut));
 }
 
 void MonitorProxy::setZone(int in, int out, bool sendUpdate)
@@ -156,7 +177,7 @@ void MonitorProxy::setZone(int in, int out, bool sendUpdate)
         emit removeSnap(m_zoneIn);
     }
     if (m_zoneOut > 0) {
-        emit removeSnap(m_zoneOut);
+        emit removeSnap(m_zoneOut - 1);
     }
     m_zoneIn = in;
     m_zoneOut = out;
@@ -164,11 +185,11 @@ void MonitorProxy::setZone(int in, int out, bool sendUpdate)
         emit addSnap(m_zoneIn);
     }
     if (m_zoneOut > 0) {
-        emit addSnap(m_zoneOut);
+        emit addSnap(m_zoneOut - 1);
     }
     emit zoneChanged();
     if (sendUpdate) {
-        emit saveZone();
+        emit saveZone(QPoint(m_zoneIn, m_zoneOut));
     }
 }
 
@@ -202,8 +223,17 @@ QImage MonitorProxy::extractFrame(int frame_position, const QString &path, int w
         width++;
     }
     if (!path.isEmpty()) {
-        QScopedPointer<Mlt::Producer> producer(new Mlt::Producer(pCore->getCurrentProfile()->profile(), path.toUtf8().constData()));
+        QScopedPointer<Mlt::Profile> tmpProfile(new Mlt::Profile());
+        QScopedPointer<Mlt::Producer> producer(new Mlt::Producer(*tmpProfile, path.toUtf8().constData()));
         if (producer && producer->is_valid()) {
+            tmpProfile->from_producer(*producer);
+            width = tmpProfile->width();
+            height = tmpProfile->height();
+            double projectFps = pCore->getCurrentFps();
+            double currentFps = tmpProfile->fps();
+            if (!qFuzzyCompare(projectFps, currentFps)) {
+                frame_position = frame_position * currentFps / projectFps;
+            }
             QImage img = KThumb::getFrame(producer.data(), frame_position, width, height);
             return img;
         }
@@ -272,11 +302,19 @@ QString MonitorProxy::toTimecode(int frames) const
     return KdenliveSettings::frametimecode() ? QString::number(frames) : q->frameToTime(frames);
 }
 
-void MonitorProxy::setClipProperties(ClipType::ProducerType type, bool hasAV, const QString clipName)
+void MonitorProxy::setClipProperties(int clipId, ClipType::ProducerType type, bool hasAV, const QString clipName)
 {
+    if (clipId != m_clipId) {
+        m_clipId = clipId;
+        emit clipIdChanged();
+    }
     if (hasAV != m_hasAV) {
         m_hasAV = hasAV;
         emit clipHasAVChanged();
+    }
+    if (type != m_clipType) {
+        m_clipType = type;
+        emit clipTypeChanged();
     }
     if (clipName == m_clipName) {
         m_clipName.clear();
@@ -284,14 +322,55 @@ void MonitorProxy::setClipProperties(ClipType::ProducerType type, bool hasAV, co
     }
     m_clipName = clipName;
     emit clipNameChanged();
-    if (type != m_clipType) {
-        m_clipType = type;
-        emit clipTypeChanged();
-    }
 }
 
-void MonitorProxy::setAudioThumb(const QUrl thumbPath)
+void MonitorProxy::setAudioThumb(const QList <int> streamIndexes, QList <int> channels)
 {
-    m_audioThumb = thumbPath;
+    m_audioChannels = channels;
+    m_audioStreams = streamIndexes;
     emit audioThumbChanged();
+}
+
+void MonitorProxy::setAudioStream(const QString &name)
+{
+    m_clipStream = name;
+    emit clipStreamChanged();
+}
+
+
+QPoint MonitorProxy::profile()
+{
+    QSize s = pCore->getCurrentFrameSize();
+    return QPoint(s.width(), s.height());
+}
+
+QColor MonitorProxy::thumbColor1() const
+{
+    return KdenliveSettings::thumbColor1();
+}
+
+QColor MonitorProxy::thumbColor2() const
+{
+    return KdenliveSettings::thumbColor2();
+}
+
+bool MonitorProxy::audioThumbFormat() const
+{
+    return KdenliveSettings::displayallchannels();
+}
+
+bool MonitorProxy::audioThumbNormalize() const
+{
+    return KdenliveSettings::normalizechannels();
+}
+
+void MonitorProxy::switchAutoKeyframe()
+{
+    KdenliveSettings::setAutoKeyframe(!KdenliveSettings::autoKeyframe());
+    emit autoKeyframeChanged();
+}
+
+bool MonitorProxy::autoKeyframe() const
+{
+    return KdenliveSettings::autoKeyframe();
 }

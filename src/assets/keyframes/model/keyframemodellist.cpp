@@ -49,6 +49,22 @@ ObjectId KeyframeModelList::getOwnerId() const
     return {};
 }
 
+const QString KeyframeModelList::getAssetId()
+{
+    if (auto ptr = m_model.lock()) {
+        return ptr->getAssetId();
+    }
+    return {};
+}
+
+const QString KeyframeModelList::getAssetRow()
+{
+    if (auto ptr = m_model.lock()) {
+        return ptr->getAssetMltId();
+    }
+    return QString();
+}
+
 void KeyframeModelList::addParameter(const QModelIndex &index)
 {
     std::shared_ptr<KeyframeModel> parameter(new KeyframeModel(m_model, index, m_undoStack));
@@ -135,6 +151,24 @@ bool KeyframeModelList::removeKeyframe(GenTime pos)
     return applyOperation(op, i18n("Delete keyframe"));
 }
 
+bool KeyframeModelList::removeKeyframeWithUndo(GenTime pos, Fun &undo, Fun &redo)
+{
+    bool result = true;
+    for (const auto &param : m_parameters) {
+        result = result && param.second->removeKeyframe(pos, undo, redo);
+    }
+    return result;
+}
+
+bool KeyframeModelList::duplicateKeyframeWithUndo(GenTime srcPos, GenTime destPos, Fun &undo, Fun &redo)
+{
+    bool result = true;
+    for (const auto &param : m_parameters) {
+        result = result && param.second->duplicateKeyframe(srcPos, destPos, undo, redo);
+    }
+    return result;
+}
+
 bool KeyframeModelList::removeAllKeyframes()
 {
     QWriteLocker locker(&m_lock);
@@ -157,6 +191,15 @@ bool KeyframeModelList::moveKeyframe(GenTime oldPos, GenTime pos, bool logUndo)
     Q_ASSERT(m_parameters.size() > 0);
     auto op = [oldPos, pos](std::shared_ptr<KeyframeModel> param, Fun &undo, Fun &redo) { return param->moveKeyframe(oldPos, pos, QVariant(), undo, redo); };
     return applyOperation(op, logUndo ? i18n("Move keyframe") : QString());
+}
+
+bool KeyframeModelList::moveKeyframeWithUndo(GenTime oldPos, GenTime pos, Fun &undo, Fun &redo)
+{
+    bool result = true;
+    for (const auto &param : m_parameters) {
+        result = result && param.second->moveKeyframe(oldPos, pos, QVariant(), undo, redo);
+    }
+    return result;
 }
 
 bool KeyframeModelList::updateKeyframe(GenTime oldPos, GenTime pos, const QVariant &normalizedVal, bool logUndo)
@@ -193,7 +236,7 @@ bool KeyframeModelList::updateKeyframe(GenTime oldPos, GenTime pos, const QVaria
     return applyOperation(op, logUndo ? i18n("Move keyframe") : QString());
 }
 
-bool KeyframeModelList::updateKeyframe(GenTime pos, const QVariant &value, const QPersistentModelIndex &index)
+bool KeyframeModelList::updateKeyframe(GenTime pos, const QVariant &value, const QPersistentModelIndex &index, QUndoCommand *parentCommand)
 {
     if (singleKeyframe()) {
         bool ok = false;
@@ -201,24 +244,12 @@ bool KeyframeModelList::updateKeyframe(GenTime pos, const QVariant &value, const
         pos = kf.first;
     }
     if (auto ptr = m_model.lock()) {
-        auto *command = new AssetKeyframeCommand(ptr, index, value, pos);
-        pCore->pushUndo(command);
+        auto *command = new AssetKeyframeCommand(ptr, index, value, pos, parentCommand);
+        if (parentCommand == nullptr) {
+            pCore->pushUndo(command);
+        }
     }
     return true;
-    QWriteLocker locker(&m_lock);
-    Q_ASSERT(m_parameters.count(index) > 0);
-    Fun undo = []() { return true; };
-    Fun redo = []() { return true; };
-    if (singleKeyframe()) {
-        bool ok = false;
-        Keyframe kf = m_parameters.begin()->second->getNextKeyframe(GenTime(-1), &ok);
-        pos = kf.first;
-    }
-    bool res = m_parameters.at(index)->updateKeyframe(pos, value, undo, redo);
-    if (res) {
-        PUSH_UNDO(undo, redo, i18n("Update keyframe"));
-    }
-    return res;
 }
 
 bool KeyframeModelList::updateKeyframeType(GenTime pos, int type, const QPersistentModelIndex &index)
@@ -274,6 +305,14 @@ bool KeyframeModelList::isEmpty() const
 {
     READ_LOCK();
     return (m_parameters.size() == 0 || m_parameters.begin()->second->rowCount() == 0);
+}
+
+int KeyframeModelList::count() const
+{
+    READ_LOCK();
+    if (m_parameters.size() > 0)
+        return m_parameters.begin()->second->rowCount();
+    return 0;
 }
 
 Keyframe KeyframeModelList::getNextKeyframe(const GenTime &pos, bool *ok) const
@@ -369,7 +408,7 @@ void KeyframeModelList::resizeKeyframes(int oldIn, int oldOut, int in, int out, 
                     QVariant value = param.second->getInterpolatedValue(new_in);
                     param.second->updateKeyframe(old_in, value, undo, redo);
                 }
-                for (auto frame : positions) {
+                for (auto frame : qAsConst(positions)) {
                     if (new_in > GenTime()) {
                         if (frame > new_in) {
                             param.second->moveKeyframe(frame, frame - new_in, QVariant(), undo, redo);
@@ -461,7 +500,7 @@ void KeyframeModelList::resizeKeyframes(int oldIn, int oldOut, int in, int out, 
             for (const auto &param : m_parameters) {
                 QVariant value = param.second->getInterpolatedValue(new_out);
                 param.second->addKeyframe(new_out, type, value, true, undo, redo);
-                for (auto frame : positions) {
+                for (auto frame : qAsConst(positions)) {
                     param.second->removeKeyframe(frame, undo, redo);
                 }
             }
@@ -498,4 +537,24 @@ void KeyframeModelList::checkConsistency()
             }
         }
     }
+}
+
+GenTime KeyframeModelList::getPosAtIndex(int ix)
+{
+    QList<GenTime> positions = m_parameters.begin()->second->getKeyframePos();
+    std::sort(positions.begin(), positions.end());
+    if (ix < 0 || ix >= positions.count()) {
+        return GenTime();
+    }
+    return positions.at(ix);
+}
+
+QModelIndex KeyframeModelList::getIndexAtRow(int row)
+{
+    for (auto &w : m_parameters) {
+        if (w.first.row() == row) {
+            return w.first;
+        }
+    }
+    return QModelIndex();
 }

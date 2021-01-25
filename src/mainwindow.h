@@ -44,6 +44,7 @@
 #include "kdenlive_debug.h"
 #include "kdenlivecore_export.h"
 #include "statusbarmessagelabel.h"
+#include "utils/otioconvertions.h"
 
 class AssetPanel;
 class AudioGraphSpectrum;
@@ -121,12 +122,27 @@ public:
     QList<QAction *> getExtraActions(const QString &name);
     /** @brief Returns true if docked widget is tabbed with another widget from its object name */
     bool isTabbedWith(QDockWidget *widget, const QString &otherWidget);
+    
+    /** @brief Returns true if mixer widget is tabbed */
+    bool isMixedTabbed() const;
 
     /** @brief Returns a ptr to the main timeline widget of the project */
     TimelineWidget *getMainTimeline() const;
 
     /** @brief Returns a pointer to the current timeline */
     TimelineWidget *getCurrentTimeline() const;
+    
+    /** @brief Returns true if the timeline widget is visible */
+    bool timelineVisible() const;
+    
+    /** @brief Raise (show) the clip or project monitor */
+    void raiseMonitor(bool clipMonitor);
+
+    /** @brief Raise (show) the project bin*/
+    void raiseBin();
+
+    /** @brief Hide subtitle track */
+    void resetSubtitles();
 
 protected:
     /** @brief Closes the window.
@@ -145,14 +161,13 @@ protected:
     /** @brief Saves the file and the window properties when saving the session. */
     void saveProperties(KConfigGroup &config) override;
 
-    /** @brief Restores the window and the file when a session is loaded. */
-    void readProperties(const KConfigGroup &config) override;
     void saveNewToolbarConfig() override;
 
 private:
     /** @brief Sets up all the actions and attaches them to the collection. */
     void setupActions();
 
+    OtioConvertions m_otioConvertions;
     KColorSchemeManager *m_colorschemes;
 
     QDockWidget *m_projectBinDock;
@@ -173,6 +188,7 @@ private:
     AudioGraphSpectrum *m_audioSpectrum;
 
     QDockWidget *m_undoViewDock;
+    QDockWidget *m_mixerDock;
 
     KSelectAction *m_timeFormatButton;
     KSelectAction *m_compositeAction;
@@ -206,7 +222,7 @@ private:
     QAction *m_buttonVideoThumbs;
     QAction *m_buttonShowMarkers;
     QAction *m_buttonFitZoom;
-    QAction *m_buttonAutomaticTransition;
+    QAction *m_buttonTimelineTags;
     QAction *m_normalEditTool;
     QAction *m_overwriteEditTool;
     QAction *m_insertEditTool;
@@ -222,11 +238,13 @@ private:
     QAction *m_playZone;
     QAction *m_loopClip;
     QAction *m_proxyClip;
+    QAction *m_buttonSubtitleEditTool;
     QString m_theme;
     KIconLoader *m_iconLoader;
     KToolBar *m_timelineToolBar;
     TimelineContainer *m_timelineToolBarContainer;
     QLabel *m_trimLabel;
+    QActionGroup *m_scaleGroup;
 
     /** @brief initialize startup values, return true if first run. */
     bool readOptions();
@@ -253,7 +271,7 @@ private:
 
 public slots:
     void slotReloadEffects(const QStringList &paths);
-    Q_SCRIPTABLE void setRenderingProgress(const QString &url, int progress);
+    Q_SCRIPTABLE void setRenderingProgress(const QString &url, int progress, int frame);
     Q_SCRIPTABLE void setRenderingFinished(const QString &url, int status, const QString &error);
     Q_SCRIPTABLE void addProjectClip(const QString &url);
     Q_SCRIPTABLE void addTimelineClip(const QString &url);
@@ -280,6 +298,7 @@ public slots:
     void slotSwitchTimelineZone(bool toggled);
     /** @brief Open the online services search dialog. */
     void slotDownloadResources();
+    void slotEditSubtitle(QMap<QString, QString> subProperties = {});
 
 private slots:
     /** @brief Shows the shortcut dialog. */
@@ -293,7 +312,7 @@ private slots:
     void slotEditProjectSettings();
     void slotSwitchMarkersComments();
     void slotSwitchSnap();
-    void slotSwitchAutomaticTransition();
+    void slotShowTimelineTags();
     void slotRenderProject();
     void slotStopRenderProject();
     void slotFullScreen();
@@ -331,6 +350,7 @@ private slots:
      * This can be useful to mark something during playback. */
     void slotAddMarkerGuideQuickly();
     void slotCutTimelineClip();
+    void slotCutTimelineAllClips();
     void slotInsertClipOverwrite();
     void slotInsertClipInsert();
     void slotExtractZone();
@@ -349,12 +369,15 @@ private slots:
     void slotAddEffect(QAction *result);
     void slotAddTransition(QAction *result);
     void slotAddProjectClip(const QUrl &url, const QString &folderInfo);
+    void slotAddTextNote(const QString &text);
     void slotAddProjectClipList(const QList<QUrl> &urls);
     void slotChangeTool(QAction *action);
     void slotChangeEdit(QAction *action);
     void slotSetTool(ProjectTool tool);
     void slotSnapForward();
     void slotSnapRewind();
+    void slotGuideForward();
+    void slotGuideRewind();
     void slotClipStart();
     void slotClipEnd();
     void slotSelectClipInTimeline();
@@ -375,8 +398,14 @@ private slots:
     void slotResizeItemStart();
     void slotResizeItemEnd();
     void configureNotifications();
+    void slotSeparateAudioChannel();
+    /** @brief Normalize audio channels before displaying them */
+    void slotNormalizeAudioChannel();
     void slotInsertTrack();
     void slotDeleteTrack();
+    /** @brief Show context menu to switch current track target audio stream. */
+    void slotSwitchTrackAudioStream();
+    void slotShowTrackRec();
     /** @brief Select all clips in active track. */
     void slotSelectTrack();
     /** @brief Select all clips in timeline. */
@@ -385,7 +414,6 @@ private slots:
     void slotGetNewKeyboardStuff(QComboBox *schemesList);
     void slotAutoTransition();
     void slotRunWizard();
-    void slotZoneMoved(int start, int end);
     void slotDvdWizard(const QString &url = QString());
     void slotGroupClips();
     void slotUnGroupClips();
@@ -467,11 +495,34 @@ private slots:
     /** @brief Set timeline toolbar icon size. */
     void setTimelineToolbarIconSize(QAction *a);
     void slotEditItemSpeed();
-    void updateAction();
     /** @brief Request adjust of timeline track height */
     void resetTimelineTracks();
     /** @brief Set keyboard grabbing on current timeline item */
     void slotGrabItem();
+    /** @brief Collapse or expand current item (depending on focused widget: effet, track)*/
+    void slotCollapse();
+    /** @brief Save currently selected timeline clip as bin subclip*/
+    void slotExtractClip();
+    /** @brief Save currently selected timeline clip as bin subclip*/
+    void slotSaveZoneToBin();
+    /** @brief Expand current timeline clip (recover clips and tracks from an MLT playlist) */
+    void slotExpandClip();
+    /** @brief Focus and activate an audio track from a shortcut sequence */
+    void slotActivateAudioTrackSequence();
+    /** @brief Focus and activate a video track from a shortcut sequence */
+    void slotActivateVideoTrackSequence();
+    /** @brief Select target for current track */
+    void slotActivateTarget();
+    /** @brief Add subtitle clip to timeline */
+    void slotAddSubtitle();
+    /** @brief Enable/disable subtitle track */
+    void slotDisableSubtitle();
+    /** @brief Lock / unlock subtitle track */
+    void slotLockSubtitle();
+    /** @brief Import a subtitle file */
+    void slotImportSubtitle();
+    /** @brief Export a subtitle file */
+    void slotExportSubtitle();
 
 signals:
     Q_SCRIPTABLE void abortRenderJob(const QString &url);
@@ -485,9 +536,12 @@ signals:
     void updateRenderWidgetProfile();
     /** @brief Clear asset view if itemId is displayed. */
     void clearAssetPanel(int itemId = -1);
+    void assetPanelWarning(const QString service, const QString id, const QString message);
     void adjustAssetPanelRange(int itemId, int in, int out);
     /** @brief Enable or disable the undo stack. For example undo/redo should not be enabled when dragging a clip in timeline or we risk corruption. */
     void enableUndo(bool enable);
+    bool focusTimeline(bool focus, bool highlight);
+    void updateProjectPath(const QString &path);
 };
 
 #endif

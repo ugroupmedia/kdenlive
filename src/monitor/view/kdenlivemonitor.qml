@@ -12,7 +12,7 @@ Item {
     // default size, but scalable by user
     height: 300; width: 400
     property string markerText
-    property point profile
+    property point profile: controller.profile
     property double zoom
     property double scalex
     property double scaley
@@ -23,6 +23,11 @@ Item {
     property bool showFps: false
     property bool showSafezone: false
     property bool showAudiothumb: false
+    // Zoombar properties
+    property double zoomStart: 0
+    property double zoomFactor: 1
+    property int zoomOffset: 0
+    property bool showZoomBar: false
     property real baseUnit: fontMetrics.font.pixelSize * 0.8
     property int duration: 300
     property int mouseRulerPos: 0
@@ -34,11 +39,10 @@ Item {
 
     FontMetrics {
         id: fontMetrics
-        font.family: "Arial"
+        font: fixedFont
     }
 
     signal editCurrentMarker()
-    signal toolBarChanged(bool doAccept)
 
     onDurationChanged: {
         clipMonitorRuler.updateRuler()
@@ -64,6 +68,9 @@ Item {
         hoverEnabled: true
         acceptedButtons: Qt.NoButton
         anchors.fill: parent
+        onWheel: {
+            controller.seek(wheel.angleDelta.x + wheel.angleDelta.y, wheel.modifiers)
+        }
     }
     SceneToolBar {
         id: sceneToolBar
@@ -116,34 +123,40 @@ Item {
             id: monitorOverlay
             anchors.fill: parent
 
-            Text {
+            Label {
                 id: timecode
-                font: fixedFont
+                font.family: fontMetrics.font.family
+                font.pointSize: 1.5 * fontMetrics.font.pointSize
                 objectName: "timecode"
-                color: "white"
-                style: Text.Outline; 
-                styleColor: "black"
+                color: "#ffffff"
+                padding: 2
+                background: Rectangle {
+                    color: "#66000000"
+                }
                 text: controller.toTimecode(controller.position)
                 visible: root.showTimecode
                 anchors {
                     right: parent.right
                     bottom: parent.bottom
-                    rightMargin: 4
+                    bottomMargin: root.zoomOffset
                 }
             }
-            Text {
+            Label {
                 id: fpsdropped
-                font: fixedFont
+                font.family: fontMetrics.font.family
+                font.pointSize: 1.5 * fontMetrics.font.pointSize
                 objectName: "fpsdropped"
-                color: root.dropped ? "red" : "white"
-                style: Text.Outline;
-                styleColor: "black"
-                text: i18n("%1 fps", root.fps)
+                color: "#ffffff"
+                padding: 2
+                background: Rectangle {
+                    color: root.dropped ? "#99ff0000" : "#66004400"
+                }
+                text: i18n("%1fps", root.fps)
                 visible: root.showFps
                 anchors {
                     right: timecode.visible ? timecode.left : parent.right
                     bottom: parent.bottom
-                    rightMargin: 10
+                    bottomMargin: root.zoomOffset
                 }
             }
             Label {
@@ -152,6 +165,7 @@ Item {
                 anchors {
                     left: parent.left
                     bottom: parent.bottom
+                    bottomMargin: root.zoomOffset
                 }
                 visible: root.showMarkers && controller.position == controller.zoneIn
                 text: i18n("In Point")
@@ -159,16 +173,8 @@ Item {
                 background: Rectangle {
                     color: "#228b22"
                 }
-                height: marker.height
-                width: textMetricsIn.width + 10
-                leftPadding:0
-                rightPadding:0
+                padding: 5
                 horizontalAlignment: TextInput.AlignHCenter
-                TextMetrics {
-                    id: textMetricsIn
-                    font: inPoint.font
-                    text: inPoint.text
-                }
             }
             Label {
                 id: outPoint
@@ -176,23 +182,16 @@ Item {
                 anchors {
                     left: inPoint.visible ? inPoint.right : parent.left
                     bottom: parent.bottom
+                    bottomMargin: root.zoomOffset
                 }
                 visible: root.showMarkers && controller.position + 1 == controller.zoneOut
                 text: i18n("Out Point")
                 color: "white"
                 background: Rectangle {
-                    color: "#ff4500"
+                    color: "#770000"
                 }
-                width: textMetricsOut.width + 10
-                height: marker.height
-                leftPadding:0
-                rightPadding:0
+                padding: 5
                 horizontalAlignment: TextInput.AlignHCenter
-                TextMetrics {
-                    id: textMetricsOut
-                    font: outPoint.font
-                    text: outPoint.text
-                }
             }
             TextField {
                 id: marker
@@ -207,22 +206,18 @@ Item {
                 anchors {
                     left: outPoint.visible ? outPoint.right : inPoint.visible ? inPoint.right : parent.left
                     bottom: parent.bottom
+                    bottomMargin: root.zoomOffset
                 }
                 visible: root.showMarkers && text != ""
                 text: controller.markerComment
-                width: textMetrics.width + 10
-                horizontalAlignment: TextInput.AlignHCenter
+                height: inPoint.height
+                width: fontMetrics.boundingRect(displayText).width + 10
+                horizontalAlignment: displayText == text ? TextInput.AlignHCenter : TextInput.AlignLeft
                 background: Rectangle {
                         color: "#990000ff"
                 }
-                color: "white"
-                padding:0
-
-                TextMetrics {
-                    id: textMetrics
-                    font: marker.font
-                    text: controller.markerComment
-                }
+                color: "#ffffff"
+                padding: 0
                 maximumLength: 25
             }
         }

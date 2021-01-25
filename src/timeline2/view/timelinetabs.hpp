@@ -49,7 +49,7 @@ class TimelineTabs : public QTabWidget
 public:
     /* Construct the tabs as well as the widget for the main timeline */
     TimelineTabs(QWidget *parent);
-
+    virtual ~TimelineTabs();
     /* @brief Returns a pointer to the main timeline */
     TimelineWidget *getMainTimeline() const;
 
@@ -84,8 +84,11 @@ signals:
     void fitZoom();
     /* @brief Requests that a given parameter model is displayed in the asset panel */
     void showTransitionModel(int tid, std::shared_ptr<AssetParameterModel>);
+    /* @brief Requests that a given mix is displayed in the asset panel */
+    void showMixModel(int cid, std::shared_ptr<AssetParameterModel>);
     /* @brief Requests that a given effectstack model is displayed in the asset panel */
     void showItemEffectStack(const QString &clipName, std::shared_ptr<EffectStackModel>, QSize, bool);
+    void showSubtitle(int itemId);
     /** @brief Zoom level changed in timeline, update slider
      */
     void updateZoom(int);

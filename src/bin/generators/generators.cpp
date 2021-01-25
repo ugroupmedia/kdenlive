@@ -20,9 +20,9 @@
 #include "generators.h"
 #include "assets/abstractassetsrepository.hpp"
 #include "doc/kthumb.h"
+#include "timecodedisplay.h"
 #include "effects/effectsrepository.hpp"
 #include "kdenlivesettings.h"
-#include "monitor/monitor.h"
 
 #include <QDialogButtonBox>
 #include <QDir>
@@ -34,7 +34,6 @@
 
 #include "core.h"
 #include "klocalizedstring.h"
-#include "kxmlgui_version.h"
 #include "profiles/profilemodel.hpp"
 #include <KMessageBox>
 #include <KRecentDirs>
@@ -44,7 +43,7 @@
 #include <mlt++/MltProfile.h>
 #include <mlt++/MltTractor.h>
 
-Generators::Generators(Monitor *monitor, const QString &path, QWidget *parent)
+Generators::Generators(const QString &path, QWidget *parent)
     : QDialog(parent)
     , m_producer(nullptr)
     , m_timePos(nullptr)
@@ -68,7 +67,7 @@ Generators::Generators(Monitor *monitor, const QString &path, QWidget *parent)
         m_preview->setPixmap(m_pixmap.scaledToWidth(m_preview->width()));
         auto *hlay = new QHBoxLayout;
         hlay->addWidget(new QLabel(i18n("Duration")));
-        m_timePos = new TimecodeDisplay(monitor->timecode(), this);
+        m_timePos = new TimecodeDisplay(pCore->timecode(), this);
         if (base.hasAttribute(QStringLiteral("updateonduration"))) {
             connect(m_timePos, &TimecodeDisplay::timeCodeEditingFinished, this, &Generators::updateDuration);
         }
@@ -80,12 +79,11 @@ Generators::Generators(Monitor *monitor, const QString &path, QWidget *parent)
         m_view = new AssetParameterView(frameWidget);
         lay->addWidget(m_view);
         QString tag = base.attribute(QStringLiteral("tag"), QString());
-        QString id = base.hasAttribute(QStringLiteral("id")) ? base.attribute(QStringLiteral("id")) : tag;
 
         auto prop = std::make_unique<Mlt::Properties>(m_producer->get_properties());
         m_assetModel.reset(new AssetParameterModel(std::move(prop), base, tag, {ObjectType::NoItem, -1})); // NOLINT
         m_view->setModel(m_assetModel, QSize(1920, 1080), false);
-        connect(m_assetModel.get(), &AssetParameterModel::modelChanged, [this]() { updateProducer(); });
+        connect(m_assetModel.get(), &AssetParameterModel::modelChanged, this, [this]() { updateProducer(); });
 
         lay->addStretch(10);
         QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -121,10 +119,15 @@ void Generators::getGenerators(const QStringList &producers, QMenu *menu)
     const QStringList generatorFolders =
         QStandardPaths::locateAll(QStandardPaths::AppDataLocation, QStringLiteral("generators"), QStandardPaths::LocateDirectory);
     const QStringList filters = QStringList() << QStringLiteral("*.xml");
+    QStringList parsedGenerators;
     for (const QString &folder : generatorFolders) {
         QDir directory(folder);
         const QStringList filesnames = directory.entryList(filters, QDir::Files);
         for (const QString &fname : filesnames) {
+            if (parsedGenerators.contains(fname)) {
+                continue;
+            }
+            parsedGenerators << fname;
             QPair<QString, QString> result = parseGenerator(directory.absoluteFilePath(fname), producers);
             if (!result.first.isEmpty()) {
                 QAction *action = menu->addAction(i18n(result.first.toUtf8().data()));

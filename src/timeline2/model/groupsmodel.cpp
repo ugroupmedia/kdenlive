@@ -103,36 +103,13 @@ int GroupsModel::groupItems(const std::unordered_set<int> &ids, Fun &undo, Fun &
     Q_ASSERT(type != GroupType::Leaf);
     Q_ASSERT(!ids.empty());
     std::unordered_set<int> roots;
+    qDebug()<<"==========GROUPING ITEMS: "<<ids.size();
     std::transform(ids.begin(), ids.end(), std::inserter(roots, roots.begin()), [&](int id) { return getRootId(id); });
     if (roots.size() == 1 && !force) {
         // We do not create a group with only one element. Instead, we return the id of that element
         return *(roots.begin());
     }
-    if (type == GroupType::AVSplit && !force) {
-        // additional checks for AVSplit
-        if (roots.size() != 2) {
-            // must group exactly two items
-            return -1;
-        }
-        auto it = roots.begin();
-        int cid1 = *it;
-        ++it;
-        int cid2 = *it;
-        auto ptr = m_parent.lock();
-        if (!ptr) Q_ASSERT(false);
-        if (cid1 == cid2 || !ptr->isClip(cid1) || !ptr->isClip(cid2)) {
-            // invalid: we must get two different clips
-            return -1;
-        }
-        int tid1 = ptr->getClipTrackId(cid1);
-        bool isAudio1 = ptr->getTrackById(tid1)->isAudioTrack();
-        int tid2 = ptr->getClipTrackId(cid2);
-        bool isAudio2 = ptr->getTrackById(tid2)->isAudioTrack();
-        if (isAudio1 == isAudio2) {
-            // invalid: we must insert one in video the other in audio
-            return -1;
-        }
-    }
+
     int gid = TimelineModel::getNextId();
     auto operation = groupItems_lambda(gid, roots, type);
     if (operation()) {
@@ -180,7 +157,9 @@ Fun GroupsModel::destructGroupItem_lambda(int id)
                 ix = ptr->makeCompositionIndexFromID(child);
             }
             if (ix.isValid()) {
-                ptr->dataChanged(ix, ix, {TimelineModel::GroupedRole});
+                emit ptr->dataChanged(ix, ix, {TimelineModel::GroupedRole});
+            } else if (ptr->isSubTitle(child)) {
+                ptr->subtitleChanged(child, {TimelineModel::GroupedRole});
             }
         }
         m_downLink[id].clear();
@@ -353,7 +332,9 @@ void GroupsModel::setGroup(int id, int groupId, bool changeState)
                 ix = ptr->makeCompositionIndexFromID(id);
             }
             if (ix.isValid()) {
-                ptr->dataChanged(ix, ix, {TimelineModel::GroupedRole});
+                emit ptr->dataChanged(ix, ix, {TimelineModel::GroupedRole});
+            } else if (ptr->isSubTitle(id)) {
+                ptr->subtitleChanged(id, {TimelineModel::GroupedRole});
             }
         }
         if (getType(groupId) == GroupType::Leaf) {
@@ -380,7 +361,9 @@ void GroupsModel::removeFromGroup(int id)
             ix = ptr->makeCompositionIndexFromID(id);
         }
         if (ix.isValid()) {
-            ptr->dataChanged(ix, ix, {TimelineModel::GroupedRole});
+            emit ptr->dataChanged(ix, ix, {TimelineModel::GroupedRole});
+        } else if (ptr->isSubTitle(id)) {
+            ptr->subtitleChanged(id, {TimelineModel::GroupedRole});
         }
         if (m_downLink[parent].size() == 0) {
             downgradeToLeaf(parent);
@@ -556,6 +539,7 @@ bool GroupsModel::split(int id, const std::function<bool(int)> &criterion, Fun &
     // At each iteration, we create a new node by grouping together elements that are either leaves or already created nodes.
     std::unordered_map<int, int> created_id; // to keep track of node that we create
 
+    std::vector<int> newGroups;
     while (!new_groups.empty()) {
         int selected = INT_MAX;
         for (const auto &group : new_groups) {
@@ -579,6 +563,7 @@ bool GroupsModel::split(int id, const std::function<bool(int)> &criterion, Fun &
         }
         Q_ASSERT(new_types.count(selected) != 0);
         int gid = groupItems(group, undo, redo, new_types[selected], true);
+        newGroups.push_back(gid);
         created_id[selected] = gid;
         new_groups.erase(selected);
     }
@@ -591,6 +576,14 @@ bool GroupsModel::split(int id, const std::function<bool(int)> &criterion, Fun &
             mergeSingleGroups(created_id[corresp[id]], undo, redo);
         }
     }
+    Fun clear_group_selection = [this, newGroups]() {
+        if (auto ptr = m_parent.lock()) {
+            // Ensure one of the deleted group was not selected
+            ptr->clearGroupSelectionOnDelete(newGroups);
+        }
+        return true;
+    };
+    PUSH_FRONT_LAMBDA(clear_group_selection, undo);
 
     return res;
 }
@@ -728,9 +721,9 @@ QJsonObject GroupsModel::toJson(int gid) const
     } else {
         // in that case we have a clip or composition
         if (auto ptr = m_parent.lock()) {
-            Q_ASSERT(ptr->isClip(gid) || ptr->isComposition(gid));
-            currentGroup.insert(QLatin1String("leaf"), QJsonValue(QLatin1String(ptr->isClip(gid) ? "clip" : "composition")));
-            int track = ptr->getTrackPosition(ptr->getItemTrackId(gid));
+            Q_ASSERT(ptr->isClip(gid) || ptr->isComposition(gid) || ptr->isSubTitle(gid));
+            currentGroup.insert(QLatin1String("leaf"), QJsonValue(QLatin1String(ptr->isClip(gid) ? "clip" : ptr->isComposition(gid) ? "composition" : "subtitle")));
+            int track = ptr->isSubTitle(gid) ? -1 : ptr->getTrackPosition(ptr->getItemTrackId(gid));
             int pos = ptr->getItemPosition(gid);
             currentGroup.insert(QLatin1String("data"), QJsonValue(QString("%1:%2").arg(track).arg(pos)));
         } else {
@@ -786,13 +779,16 @@ int GroupsModel::fromJson(const QJsonObject &o, Fun &undo, Fun &redo)
             }
             QString data = o.value(QLatin1String("data")).toString();
             QString leaf = o.value(QLatin1String("leaf")).toString();
-            int trackId = ptr->getTrackIndexFromPosition(data.section(":", 0, 0).toInt());
+            int trackPos = data.section(":", 0, 0).toInt();
+            int trackId = trackPos > -1 ? ptr->getTrackIndexFromPosition(trackPos) : -1;
             int pos = data.section(":", 1, 1).toInt();
             int id = -1;
             if (leaf == QLatin1String("clip")) {
-                id = ptr->getClipByPosition(trackId, pos);
+                id = ptr->getClipByStartPosition(trackId, pos);
             } else if (leaf == QLatin1String("composition")) {
                 id = ptr->getCompositionByPosition(trackId, pos);
+            } else if (leaf == QLatin1String("subtitle")) {
+                id = ptr->getSubtitleByPosition(pos);
             } else {
                 qDebug() << " * * *UNKNOWN ITEM: " << leaf;
             }
@@ -854,7 +850,7 @@ void GroupsModel::adjustOffset(QJsonArray &updatedNodes, QJsonObject childObject
 {
     auto value = childObject.value(QLatin1String("children"));
     auto children = value.toArray();
-    for (auto c : children) {
+    for (const auto &c : qAsConst(children)) {
         if (!c.isObject()) {
             continue;
         }
@@ -893,7 +889,7 @@ bool GroupsModel::fromJsonWithOffset(const QString &data, const QMap<int, int> &
     auto list = json.array();
     QJsonArray newGroups;
     bool ok = true;
-    for (auto elem : list) {
+    for (const auto &elem : qAsConst(list)) {
         if (!elem.isObject()) {
             qDebug() << "Error : Expected json object while parsing groups";
             local_undo();
@@ -908,7 +904,6 @@ bool GroupsModel::fromJsonWithOffset(const QString &data, const QMap<int, int> &
             continue;
         }
         // Adjust offset
-        auto children = value.toArray();
         adjustOffset(updatedNodes, obj, offset, trackMap);
         QJsonObject currentGroup;
         currentGroup.insert(QLatin1String("children"), QJsonValue(updatedNodes));
@@ -924,6 +919,7 @@ bool GroupsModel::fromJsonWithOffset(const QString &data, const QMap<int, int> &
         }
         ok = ok && fromJson(elem.toObject(), local_undo, local_redo);
     }
+
     if (ok) {
         UPDATE_UNDO_REDO(local_redo, local_undo, undo, redo);
     } else {

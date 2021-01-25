@@ -19,13 +19,14 @@
  ***************************************************************************/
 
 #include "core.h"
-#include "dialogs/splash.hpp"
 #include "logger.hpp"
+#include "dialogs/splash.hpp"
 #include <config-kdenlive.h>
 
 #include <mlt++/Mlt.h>
 
 #include "kxmlgui_version.h"
+#include "mainwindow.h"
 
 #include <KAboutData>
 #include <KConfigGroup>
@@ -42,6 +43,7 @@
 #include "kdenlive_debug.h"
 #include <KDBusService>
 #include <KIconTheme>
+#include <kiconthemes_version.h>
 #include <QResource>
 #include <QApplication>
 #include <QCommandLineOption>
@@ -52,6 +54,7 @@
 #include <QQmlEngine>
 #include <QUrl> //new
 #include <klocalizedstring.h>
+#include <QSplashScreen>
 
 #ifdef Q_OS_WIN
 extern "C"
@@ -75,10 +78,8 @@ int main(int argc, char *argv[])
     QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
     //TODO: is it a good option ?
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts, true);
-
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MAC)
-    QCoreApplication::setAttribute(Qt::AA_X11InitThreads);
-#elif defined(Q_OS_WIN)
+    
+#if defined(Q_OS_WIN)
     KSharedConfigPtr configWin = KSharedConfig::openConfig("kdenliverc");
     KConfigGroup grp1(configWin, "misc");
     if (grp1.exists()) {
@@ -91,11 +92,21 @@ int main(int argc, char *argv[])
         QCoreApplication::setAttribute(Qt::AA_UseOpenGLES, true);
     }
 #endif
+    qputenv("LANG", QLocale().name().toUtf8());
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("kdenlive"));
     app.setOrganizationDomain(QStringLiteral("kde.org"));
     app.setWindowIcon(QIcon(QStringLiteral(":/pics/kdenlive.png")));
     KLocalizedString::setApplicationDomain("kdenlive");
+
+    QPixmap pixmap(":/pics/splash-background.png");
+    qApp->processEvents(QEventLoop::AllEvents);
+    Splash splash(pixmap);
+    qApp->processEvents(QEventLoop::AllEvents);
+    splash.showMessage(i18n("Version %1", QString(KDENLIVE_VERSION)), Qt::AlignRight | Qt::AlignBottom, Qt::white);
+    splash.show();
+    qApp->processEvents(QEventLoop::AllEvents);
+
 #ifdef Q_OS_WIN
     qputenv("KDE_FORK_SLAVES", "1");
     QString path = qApp->applicationDirPath() + QLatin1Char(';') + qgetenv("PATH");
@@ -135,10 +146,11 @@ int main(int argc, char *argv[])
                 qCDebug(KDENLIVE_LOG) << "Non KDE Desktop detected, forcing Breeze icon theme";
             }
         }
-        // Set breeze dark as default on first opening
-        KConfigGroup cg(config, "UiSettings");
-        cg.writeEntry("ColorScheme", "Breeze Dark");
     }
+#if KICONTHEMES_VERSION < QT_VERSION_CHECK(5,60,0)
+    // work around bug in Kirigami2 resetting icon theme path
+    qputenv("XDG_CURRENT_DESKTOP","KDE");
+#endif
 
     // Init DBus services
     KDBusService programDBusService;
@@ -147,10 +159,11 @@ int main(int argc, char *argv[])
         bool darkBreeze = grp.readEntry("use_dark_breeze", QVariant(false)).toBool();
         QIcon::setThemeName(darkBreeze ? QStringLiteral("breeze-dark") : QStringLiteral("breeze"));
     }
+    qApp->processEvents(QEventLoop::AllEvents);
 
     // Create KAboutData
     KAboutData aboutData(QByteArray("kdenlive"), i18n("Kdenlive"), KDENLIVE_VERSION, i18n("An open source video editor."), KAboutLicense::GPL,
-                         i18n("Copyright © 2007–2020 Kdenlive authors"), i18n("Please report bugs to http://bugs.kde.org"),
+                         i18n("Copyright © 2007–2021 Kdenlive authors"), i18n("Please report bugs to https://bugs.kde.org"),
                          QStringLiteral("https://kdenlive.org"));
     aboutData.addAuthor(i18n("Jean-Baptiste Mardelle"), i18n("MLT and KDE SC 4 / KF5 port, main developer and maintainer"), QStringLiteral("jb@kdenlive.org"));
     aboutData.addAuthor(i18n("Nicolas Carion"), i18n("Code re-architecture & timeline rewrite"), QStringLiteral("french.ebook.lover@gmail.com"));
@@ -175,22 +188,17 @@ int main(int argc, char *argv[])
     // Register about data
     KAboutData::setApplicationData(aboutData);
 
-    // Add rcc stored icons to the search path so that we always find our icons
-    KIconLoader *loader = KIconLoader::global();
-    loader->reconfigure("kdenlive", QStringList() << QStringLiteral(":/pics"));
-
     // Set app stuff from about data
     app.setApplicationDisplayName(aboutData.displayName());
     app.setOrganizationDomain(aboutData.organizationDomain());
     app.setApplicationVersion(aboutData.version());
     app.setAttribute(Qt::AA_DontCreateNativeWidgetSiblings, true);
+    qApp->processEvents(QEventLoop::AllEvents);
 
     // Create command line parser with options
     QCommandLineParser parser;
     aboutData.setupCommandLine(&parser);
     parser.setApplicationDescription(aboutData.shortDescription());
-    parser.addVersionOption();
-    parser.addHelpOption();
 
     parser.addOption(QCommandLineOption(QStringList() << QStringLiteral("config"), i18n("Set a custom config file name"), QStringLiteral("config")));
     parser.addOption(QCommandLineOption(QStringList() << QStringLiteral("mlt-path"), i18n("Set the path for MLT environment"), QStringLiteral("mlt-path")));
@@ -202,25 +210,33 @@ int main(int argc, char *argv[])
     parser.process(app);
     aboutData.processCommandLine(&parser);
 
+    qApp->processEvents(QEventLoop::AllEvents);
+
 #ifdef USE_DRMINGW
     ExcHndlInit();
 #elif defined(KF5_USE_CRASH)
     KCrash::initialize();
 #endif
 
-    //auto splash = new Splash(&app);
-    //splash->show();
-    //qApp->processEvents();
-
     qmlRegisterUncreatableMetaObject(PlaylistState::staticMetaObject, // static meta object
                                      "com.enums",                     // import statement
                                      1, 0,                            // major and minor version of the import
                                      "ClipState",                     // name in QML
                                      "Error: only enums");
+    qmlRegisterUncreatableMetaObject(FileStatus::staticMetaObject, // static meta object
+                                     "com.enums",                     // import statement
+                                     1, 0,                            // major and minor version of the import
+                                     "ClipStatus",                     // name in QML
+                                     "Error: only enums");
     qmlRegisterUncreatableMetaObject(ClipType::staticMetaObject, // static meta object
                                      "com.enums",                // import statement
                                      1, 0,                       // major and minor version of the import
                                      "ProducerType",             // name in QML
+                                     "Error: only enums");
+    qmlRegisterUncreatableMetaObject(AssetListType::staticMetaObject, // static meta object
+                                     "com.enums",                // import statement
+                                     1, 0,                       // major and minor version of the import
+                                     "AssetType",             // name in QML
                                      "Error: only enums");
     if (parser.value(QStringLiteral("mlt-log")) == QStringLiteral("verbose")) {
         mlt_log_set_level(MLT_LOG_VERBOSE);
@@ -230,20 +246,22 @@ int main(int argc, char *argv[])
     const QString clipsToLoad = parser.value(QStringLiteral("i"));
     QUrl url;
     if (parser.positionalArguments().count() != 0) {
-        url = QUrl::fromLocalFile(parser.positionalArguments().at(0));
-        // Make sure we get an absolute URL so that we can autosave correctly
-        QString currentPath = QDir::currentPath();
-        QUrl startup = QUrl::fromLocalFile(currentPath.endsWith(QDir::separator()) ? currentPath : currentPath + QDir::separator());
-        url = startup.resolved(url);
+        const QString inputFilename = parser.positionalArguments().at(0);
+        const QFileInfo fileInfo(inputFilename);
+        url = QUrl(inputFilename);
+        if (fileInfo.exists() || url.scheme().isEmpty()) { // easiest way to detect "invalid"/unintended URLs is no scheme
+            url = QUrl::fromLocalFile(fileInfo.absoluteFilePath());
+        }
     }
+    qApp->processEvents(QEventLoop::AllEvents);
     Core::build(!parser.value(QStringLiteral("config")).isEmpty(), parser.value(QStringLiteral("mlt-path")));
+    QObject::connect(pCore.get(), &Core::loadingMessageUpdated, &splash, &Splash::showProgressMessage, Qt::DirectConnection);
+    QObject::connect(pCore.get(), &Core::closeSplash, [&] () {
+        splash.finish(pCore->window());
+    });
     pCore->initGUI(url, clipsToLoad);
-    //delete splash;
-    //splash->endSplash();
-    //qApp->processEvents();
     int result = app.exec();
     Core::clean();
-
     if (result == EXIT_RESTART || result == EXIT_CLEAN_RESTART) {
         qCDebug(KDENLIVE_LOG) << "restarting app";
         if (result == EXIT_CLEAN_RESTART) {
@@ -257,10 +275,26 @@ int main(int argc, char *argv[])
                     f.remove();
                 }
             }
+            // Delete xml ui rc file
+            QDir dir(QStandardPaths::locate(QStandardPaths::GenericDataLocation, QStringLiteral("kxmlgui5"), QStandardPaths::LocateDirectory));
+            if (dir.exists()) {
+                dir.cd(QStringLiteral("kdenlive"));
+            }
+            if (dir.exists()) {
+                QFile f(dir.absoluteFilePath(QStringLiteral("kdenliveui.rc")));
+                if (f.exists()) {
+                    qDebug()<<" = = = =\nGOT Deleted file: "<<f.fileName();
+                    f.remove();
+                }
+            }
         }
-        QStringList progArgs = QString(*argv).split(QLatin1Char(' '), QString::SkipEmptyParts);
-        // Remove app name
-        progArgs.takeFirst();
+        QStringList progArgs;
+        if (argc > 1) {
+            // Start at 1 to remove app name
+            for (int i = 1; i < argc; i++) {
+                progArgs << QString(argv[i]);
+            }
+        }
         auto *restart = new QProcess;
         restart->start(app.applicationFilePath(), progArgs);
         restart->waitForReadyRead();

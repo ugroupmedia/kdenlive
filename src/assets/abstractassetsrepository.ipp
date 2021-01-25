@@ -38,13 +38,6 @@ template <typename AssetType> AbstractAssetsRepository<AssetType>::AbstractAsset
 
 template <typename AssetType> void AbstractAssetsRepository<AssetType>::init()
 {
-// Warning: Mlt::Factory::init() resets the locale to the default system value, make sure we keep correct locale
-#ifndef Q_OS_MAC
-    setlocale(LC_NUMERIC, nullptr);
-#else
-    setlocale(LC_NUMERIC_MASK, nullptr);
-#endif
-
     // Parse blacklist
     parseAssetList(assetBlackListPath(), m_blacklist);
 
@@ -63,14 +56,11 @@ template <typename AssetType> void AbstractAssetsRepository<AssetType>::init()
             // sox effects are not usage directly (parameters not available)
             continue;
         }
-        // qDebug() << "trying to parse " <<name <<" blacklist="<<m_blacklist.contains(name);
         if (!m_blacklist.contains(name) && parseInfoFromMlt(name, info)) {
             m_assets[name] = info;
         } else {
-            if (m_blacklist.contains(name)) {
-                qDebug() << name << "is blacklisted";
-            } else {
-                qDebug() << "WARNING : Fails to parse " << name;
+            if (!m_blacklist.contains(name)) {
+                qWarning() << "Failed to parse" << name;
             }
         }
     }
@@ -90,10 +80,9 @@ template <typename AssetType> void AbstractAssetsRepository<AssetType>::init()
     QListIterator<QString> dirs_it(asset_dirs);
     for (dirs_it.toBack(); dirs_it.hasPrevious();) { auto dir=dirs_it.previous();
         QDir current_dir(dir);
-        QStringList filter;
-        filter << QStringLiteral("*.xml");
+        QStringList filter {QStringLiteral("*.xml")};
         QStringList fileList = current_dir.entryList(filter, QDir::Files);
-        for (const auto &file : fileList) {
+        for (const auto &file : qAsConst(fileList)) {
             QString path = current_dir.absoluteFilePath(file);
             parseCustomAssetFile(path, customAssets);
         }
@@ -103,14 +92,6 @@ template <typename AssetType> void AbstractAssetsRepository<AssetType>::init()
     for (const auto &custom : customAssets) {
         // Custom assets should override default ones
         m_assets[custom.first] = custom.second;
-        /*if (m_assets.count(custom.second.mltId) > 0) {
-            m_assets.erase(custom.second.mltId);
-        }
-        if (m_assets.count(custom.first) == 0) {
-            m_assets[custom.first] = custom.second;
-        } else {
-            qDebug() << "Error: conflicting asset name " << custom.first;
-        }*/
     }
 }
 
@@ -150,8 +131,6 @@ template <typename AssetType> bool AbstractAssetsRepository<AssetType>::parseInf
             QDomElement eff = doc.createElement(QStringLiteral("effect"));
             eff.setAttribute(QStringLiteral("tag"), id);
             eff.setAttribute(QStringLiteral("id"), id);
-            QLocale locale;
-            ////qCDebug(KDENLIVE_LOG)<<"Effect: "<<id;
 
             Mlt::Properties param_props((mlt_properties)metadata->get_data("parameters"));
             for (int j = 0; param_props.is_valid() && j < param_props.count(); ++j) {
@@ -173,10 +152,10 @@ template <typename AssetType> bool AbstractAssetsRepository<AssetType>::parseInf
                 if (paramType == QLatin1String("float")) {
                     // Float must be converted using correct locale
                     if (paramdesc.get("maximum")) {
-                        params.setAttribute(QStringLiteral("max"), locale.toString(paramdesc.get_double("maximum")));
+                        params.setAttribute(QStringLiteral("max"), QString::number(paramdesc.get_double("maximum"), 'f'));
                     }
                     if (paramdesc.get("minimum")) {
-                        params.setAttribute(QStringLiteral("min"), locale.toString(paramdesc.get_double("minimum")));
+                        params.setAttribute(QStringLiteral("min"), QString::number(paramdesc.get_double("minimum"), 'f'));
                     }
                 } else {
                     if (paramdesc.get("maximum")) {
@@ -222,12 +201,12 @@ template <typename AssetType> bool AbstractAssetsRepository<AssetType>::parseInf
                     if (paramType == QLatin1String("float")) {
                         // floats have to be converted using correct locale
                         if (paramdesc.get("default")) {
-                            params.setAttribute(QStringLiteral("default"), locale.toString(paramdesc.get_double("default")));
+                            params.setAttribute(QStringLiteral("default"), QString::number(paramdesc.get_double("default"), 'f'));
                         }
                         if (paramdesc.get("value")) {
-                            params.setAttribute(QStringLiteral("value"), locale.toString(paramdesc.get_double("value")));
+                            params.setAttribute(QStringLiteral("value"), QString::number(paramdesc.get_double("value"), 'f'));
                         } else {
-                            params.setAttribute(QStringLiteral("value"), locale.toString(paramdesc.get_double("default")));
+                            params.setAttribute(QStringLiteral("value"), QString::number(paramdesc.get_double("default"), 'f'));
                         }
                     } else {
                         if (paramdesc.get("default")) {
@@ -260,7 +239,11 @@ template <typename AssetType> bool AbstractAssetsRepository<AssetType>::parseInf
             doc.appendChild(eff);
             res.xml = eff;
             return true;
+        } else {
+            qWarning() << "Invalid title/identifier for" << assetId;
         }
+    } else {
+        qWarning() << "Invalid metadata for" << assetId;
     }
     return false;
 }
@@ -291,6 +274,14 @@ template <typename AssetType> AssetType AbstractAssetsRepository<AssetType>::get
     return m_assets.at(assetId).type;
 }
 
+template <typename AssetType> bool AbstractAssetsRepository<AssetType>::isUnique(const QString &assetId) const
+{
+    if (m_assets.count(assetId) > 0) {
+        return m_assets.at(assetId).xml.hasAttribute(QStringLiteral("unique"));
+    }
+    return false;
+}
+
 template <typename AssetType> QString AbstractAssetsRepository<AssetType>::getName(const QString &assetId) const
 {
     Q_ASSERT(m_assets.count(assetId) > 0);
@@ -306,14 +297,13 @@ template <typename AssetType> QString AbstractAssetsRepository<AssetType>::getDe
 template <typename AssetType> bool AbstractAssetsRepository<AssetType>::parseInfoFromXml(const QDomElement &currentAsset, Info &res) const
 {
     QString tag = currentAsset.attribute(QStringLiteral("tag"), QString());
-
     QString id = currentAsset.attribute(QStringLiteral("id"), QString());
     if (id.isEmpty()) {
         id = tag;
     }
 
     if (!exists(tag)) {
-        qDebug() << "++++++ Unknown asset : " << tag;
+        qDebug() << "Unknown asset" << tag;
         return false;
     }
 
@@ -332,7 +322,7 @@ template <typename AssetType> bool AbstractAssetsRepository<AssetType>::parseInf
     // Update description if the xml provide one
     QString description = Xml::getSubTagContent(currentAsset, QStringLiteral("description"));
     if (!description.isEmpty()) {
-        res.description = i18n(description.toUtf8().constData()) + QString(" (%1)").arg(res.id);
+        res.description = i18n(description.toUtf8().constData()) + QString(" (%1)").arg(res.mltId);
     }
 
     // Update name if the xml provide one
@@ -346,7 +336,7 @@ template <typename AssetType> bool AbstractAssetsRepository<AssetType>::parseInf
 template <typename AssetType> QDomElement AbstractAssetsRepository<AssetType>::getXml(const QString &assetId) const
 {
     if (m_assets.count(assetId) == 0) {
-        qDebug() << "Error : Requesting info on unknown transition " << assetId;
+        qWarning() << "Unknown transition" << assetId;
         return QDomElement();
     }
     return m_assets.at(assetId).xml.cloneNode().toElement();

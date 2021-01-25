@@ -59,11 +59,19 @@ void ClipSnapModel::updateSnapModelPos(int newPos)
     addAllSnaps();
 }
 
-void ClipSnapModel::updateSnapModelInOut(std::pair<int, int> newInOut)
+void ClipSnapModel::updateSnapModelInOut(std::vector<int> borderSnaps)
 {
     removeAllSnaps();
-    m_inPoint = newInOut.first;
-    m_outPoint = newInOut.second;
+    m_inPoint = borderSnaps.at(0);
+    m_outPoint = borderSnaps.at(1);
+    m_mixPoint = borderSnaps.at(2);
+    addAllSnaps();
+}
+
+void ClipSnapModel::updateSnapMixPosition(int mixPos)
+{
+    removeAllSnaps();
+    m_mixPoint = mixPos;
     addAllSnaps();
 }
 
@@ -74,6 +82,9 @@ void ClipSnapModel::addAllSnaps()
             if (snap >= m_inPoint * m_speed && snap < m_outPoint * m_speed) {
                 ptr->addPoint(m_speed < 0 ? ceil(m_outPoint + m_position + snap / m_speed - m_inPoint) : ceil(m_position + snap / m_speed - m_inPoint));
             }
+        }
+        if (m_mixPoint > 0) {
+            ptr->addPoint(ceil(m_position + m_mixPoint / m_speed));
         }
     }
 }
@@ -86,7 +97,26 @@ void ClipSnapModel::removeAllSnaps()
                 ptr->removePoint(m_speed < 0 ? ceil(m_outPoint + m_position + snap / m_speed - m_inPoint) : ceil(m_position + snap / m_speed - m_inPoint));
             }
         }
+        if (m_mixPoint > 0) {
+            ptr->removePoint(ceil(m_position + m_mixPoint / m_speed));
+        }
     }
+}
+
+void ClipSnapModel::allSnaps(std::vector<int> &snaps, int offset)
+{
+    snaps.push_back(m_position - offset);
+    if (auto ptr = m_registeredSnap.lock()) {
+        for (const auto &snap : m_snapPoints) {
+            if (snap >= m_inPoint * m_speed && snap < m_outPoint * m_speed) {
+                snaps.push_back(m_speed < 0 ? ceil(m_outPoint + m_position + snap / m_speed - m_inPoint - offset) : ceil(m_position + snap / m_speed - m_inPoint - offset));
+            }
+        }
+    }
+    if (m_mixPoint > 0) {
+        snaps.push_back(m_position + m_mixPoint - offset);
+    }
+    snaps.push_back(m_position + m_outPoint - m_inPoint + 1 - offset);
 }
 
 void ClipSnapModel::registerSnapModel(const std::weak_ptr<SnapModel> &snapModel, int position, int in, int out, double speed)

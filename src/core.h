@@ -16,9 +16,15 @@ the Free Software Foundation, either version 3 of the License, or
 #include "undohelper.hpp"
 #include <QMutex>
 #include <QObject>
+#include <QColor>
 #include <QUrl>
 #include <memory>
 #include <QPoint>
+#include <QTextEdit>
+#include <KSharedDataCache>
+#include <unordered_set>
+#include "timecode.h"
+
 class Bin;
 class DocUndoStack;
 class EffectStackModel;
@@ -33,10 +39,13 @@ class MonitorManager;
 class ProfileModel;
 class ProjectItemModel;
 class ProjectManager;
+class SubtitleEdit;
+class SubtitleModel;
 
 namespace Mlt {
-class Repository;
-class Profile;
+    class Repository;
+    class Producer;
+    class Profile;
 } // namespace Mlt
 
 #define EXIT_RESTART (42)
@@ -93,20 +102,24 @@ public:
     ProjectManager *projectManager();
     /** @brief Returns a pointer to the current project. */
     KdenliveDoc *currentDoc();
-    /** @brief Set current project modified. */
-    void setDocumentModified();
+    /** @brief Returns project's timecode. */
+    Timecode timecode() const;
     /** @brief Returns a pointer to the monitor manager. */
     MonitorManager *monitorManager();
     /** @brief Returns a pointer to the view of the project bin. */
     Bin *bin();
     /** @brief Select a clip in the Bin from its id. */
     void selectBinClip(const QString &id, int frame = -1, const QPoint &zone = QPoint());
+    /** @brief Selects an item in the current timeline (clip, composition, subtitle). */
+    void selectTimelineItem(int id);
     /** @brief Returns a pointer to the model of the project bin. */
     std::shared_ptr<ProjectItemModel> projectItemModel();
     /** @brief Returns a pointer to the job manager. Please do not store it. */
     std::shared_ptr<JobManager> jobManager();
     /** @brief Returns a pointer to the library. */
     LibraryWidget *library();
+    /** @brief Returns a pointer to the subtitle edit. */
+    SubtitleEdit *subtitleWidget();
     /** @brief Returns a pointer to the audio mixer. */
     MixerManager *mixer();
 
@@ -136,7 +149,7 @@ public:
     /** @brief Request project monitor refresh */
     void requestMonitorRefresh();
     /** @brief Request project monitor refresh if current position is inside range*/
-    void refreshProjectRange(QSize range);
+    void refreshProjectRange(QPair<int, int> range);
     /** @brief Request project monitor refresh if referenced item is under cursor */
     void refreshProjectItem(const ObjectId &id);
     /** @brief Returns a reference to a monitor (clip or project monitor) */
@@ -173,7 +186,7 @@ public:
     double getClipSpeed(int id) const;
     /** @brief Mark an item as invalid for timeline preview */
     void invalidateItem(ObjectId itemId);
-    void invalidateRange(QSize range);
+    void invalidateRange(QPair<int, int>range);
     void prepareShutdown();
     /** the keyframe model changed (effect added, deleted, active effect changed), inform timeline */
     void updateItemKeyframes(ObjectId id);
@@ -199,8 +212,35 @@ public:
     QString getProjectFolderName();
     /** @brief Returns a timeline clip's bin id */
     QString getTimelineClipBinId(int cid);
+    /** @brief Returns all track ids in timeline */
+    std::unordered_set<QString> getAllTimelineTracksId();
     /** @brief Returns a frame duration from a timecode */
     int getDurationFromString(const QString &time);
+    /** @brief An error occurred within a filter, inform user */
+    void processInvalidFilter(const QString service, const QString id, const QString message);
+    /** @brief Update current project's tags */
+    void updateProjectTags(QMap <QString, QString> tags);
+    /** @brief Returns the consumer profile, that will be scaled 
+     *  according to preview settings. Should only be used on the consumer */
+    Mlt::Profile *getProjectProfile();
+    /** @brief Returns a copy of current timeline's master playlist */
+    std::unique_ptr<Mlt::Producer> getMasterProducerInstance();
+    /** @brief Returns a copy of a track's playlist */
+    std::unique_ptr<Mlt::Producer> getTrackProducerInstance(int tid);
+    /** @brief Returns the undo stack index (position). */
+    int undoIndex() const;
+    /** @brief Enable / disable monitor multitrack view. Returns false if multitrack was not previously enabled */
+    bool enableMultiTrack(bool enable);
+    /** @brief Returns number of audio channels for this project. */
+    int audioChannels();
+    /** @brief Add guides in the project. */
+    void addGuides(QList <int> guides);
+    /** @brief Temporarily un/plug a list of clips in timeline. */
+    void temporaryUnplug(QList<int> clipIds, bool hide);
+    /** @brief Returns the current doc's subtitle model. */
+    std::shared_ptr<SubtitleModel> getSubtitleModel(bool enforce = false);
+    
+    KSharedDataCache audioThumbCache;
 
 private:
     explicit Core();
@@ -216,35 +256,48 @@ private:
     std::shared_ptr<JobManager> m_jobManager;
     Bin *m_binWidget{nullptr};
     LibraryWidget *m_library{nullptr};
+    SubtitleEdit *m_subtitleWidget{nullptr};
     MixerManager *m_mixerWidget{nullptr};
     /** @brief Current project's profile path */
     QString m_currentProfile;
 
     QString m_profile;
+    Timecode m_timecode;
     std::unique_ptr<Mlt::Profile> m_thumbProfile;
+    /** @brief Mlt profile used in the consumer 's monitors */
+    std::unique_ptr<Mlt::Profile> m_projectProfile;
     bool m_guiConstructed = false;
     /** @brief Check that the profile is valid (width is a multiple of 8 and height a multiple of 2 */
     void checkProfileValidity();
     std::unique_ptr<MediaCapture> m_capture;
     QUrl m_mediaCaptureFile;
-
     QMutex m_thumbProfileMutex;
 
 public slots:
+    /** @brief Trigger (launch) an action by its actionCollection name */
     void triggerAction(const QString &name);
+    /** @brief Get an action's descriptive text by its actionCollection name */
+    const QString actionText(const QString &name);
     /** @brief display a user info/warning message in the project bin */
-    void displayBinMessage(const QString &text, int type, const QList<QAction *> &actions = QList<QAction *>());
+    void displayBinMessage(const QString &text, int type, const QList<QAction *> &actions = QList<QAction *>(), bool showClose = false, BinMessage::BinCategory messageCategory = BinMessage::BinCategory::NoMessage);
     void displayBinLogMessage(const QString &text, int type, const QString &logInfo);
     /** @brief Create small thumbnails for luma used in compositions */
     void buildLumaThumbs(const QStringList &values);
+    /** @brief Set current project modified. */
+    void setDocumentModified();
 
 signals:
     void coreIsReady();
     void updateLibraryPath();
+    void updateMonitorProfile();
     /** @brief Call config dialog on a selected page / tab */
     void showConfigDialog(int, int);
     void finalizeRecording(const QString &captureFile);
     void autoScrollChanged();
+    /** @brief Send a message to splash screen if still displayed */
+    void loadingMessageUpdated(const QString &, int progress = 0, int max = -1);
+    /** @brief Opening finished, close splash screen */
+    void closeSplash();
 };
 
 #endif

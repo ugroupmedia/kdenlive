@@ -64,6 +64,10 @@ public:
 
     /* @brief Removes the keyframe at the given position. */
     bool removeKeyframe(GenTime pos);
+    bool removeKeyframeWithUndo(GenTime pos, Fun &undo, Fun &redo);
+    
+    /* @brief Duplicate a keyframe at the given position. */
+    bool duplicateKeyframeWithUndo(GenTime srcPos, GenTime destPos, Fun &undo, Fun &redo);
     /* @brief Delete all the keyframes of the model (except first) */
     bool removeAllKeyframes();
     /* @brief Delete all the keyframes after a certain position (except first) */
@@ -75,13 +79,14 @@ public:
        @param logUndo if true, then an undo object is created
     */
     bool moveKeyframe(GenTime oldPos, GenTime pos, bool logUndo);
+    bool moveKeyframeWithUndo(GenTime oldPos, GenTime pos, Fun &undo, Fun &redo);
 
     /* @brief updates the value of a keyframe
        @param old is the position of the keyframe
        @param value is the new value of the param
        @param index is the index of the wanted keyframe
     */
-    bool updateKeyframe(GenTime pos, const QVariant &value, const QPersistentModelIndex &index);
+    bool updateKeyframe(GenTime pos, const QVariant &value, const QPersistentModelIndex &index, QUndoCommand *parentCommand = nullptr);
     bool updateKeyframeType(GenTime pos, int type, const QPersistentModelIndex &index);
     bool updateKeyframe(GenTime oldPos, GenTime pos, const QVariant &normalizedVal, bool logUndo = true);
     KeyframeType keyframeType(GenTime pos) const;
@@ -96,6 +101,9 @@ public:
     /* @brief Returns true if we only have no keyframe
      */
     bool isEmpty() const;
+    /* @brief Returns the number of keyframes
+     */
+    int count() const;
 
     /* @brief Returns the keyframe located after given position.
        If there is a keyframe at given position it is ignored.
@@ -132,10 +140,17 @@ public:
     KeyframeModel *getKeyModel(const QPersistentModelIndex &index);
     /** @brief Returns parent asset owner id*/
     ObjectId getOwnerId() const;
+    /** @brief Returns parent asset id*/
+    const QString getAssetId();
+    const QString getAssetRow();
 
     /** @brief Parent item size change, update keyframes*/
     void resizeKeyframes(int oldIn, int oldOut, int in, int out, int offset, bool adjustFromEnd, Fun &undo, Fun &redo);
     
+    /** @brief Return position of the nth keyframe (ix = nth)*/
+    GenTime getPosAtIndex(int ix);
+    QModelIndex getIndexAtRow(int row);
+
     /** @brief Check that all keyframable parameters have the same keyframes on loading
      *  (that's how our model works) */
     void checkConsistency();

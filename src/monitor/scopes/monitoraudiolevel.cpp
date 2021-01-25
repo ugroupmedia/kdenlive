@@ -85,7 +85,7 @@ void MonitorAudioLevel::refreshScope(const QSize & /*size*/, bool /*full*/)
                 QString s = QStringLiteral("meta.media.audio_level.%1").arg(i);
                 levels << (int)levelToDB(mFrame.get_double(s.toLatin1().constData()));
             }
-            QMetaObject::invokeMethod(this, "setAudioValues", Qt::QueuedConnection, Q_ARG(const QVector<int> &, levels));
+            QMetaObject::invokeMethod(this, "setAudioValues", Qt::QueuedConnection, Q_ARG(QVector<int>, levels));
         }
     }
 }
@@ -151,7 +151,7 @@ void MonitorAudioLevel::drawBackground(int channels)
     int y = totalHeight + textHeight;
     for (int i = 0; i < dbLabelCount; i++) {
         int value = dbscale.at(i);
-        QString label = QString().sprintf("%d", value);
+        QString label = QString::number(value);
         int labelWidth = fontMetrics().horizontalAdvance(label);
         double xf = pow(10.0, (double)dbscale.at(i) / 50.0) * m_pixmap.width() * 40.0 / 42;
         if (xf + labelWidth / 2 > m_pixmap.width()) {

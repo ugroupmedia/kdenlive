@@ -19,15 +19,12 @@
  ***************************************************************************/
 
 #include "mltpreview.h"
+#include "../src/lib/localeHandling.h"
 
 #include <QImage>
 #include <QVarLengthArray>
-
+#include <QtGlobal>
 #include <QDebug>
-#include <krandomsequence.h>
-#include <unistd.h>
-
-#define DBG_AREA
 
 extern "C" {
 Q_DECL_EXPORT ThumbCreator *new_creator()
@@ -38,7 +35,10 @@ Q_DECL_EXPORT ThumbCreator *new_creator()
 
 MltPreview::MltPreview()
 {
+    // After initialising the MLT factory, set the locale back from user default to C
+    // to ensure numbers are always serialised with . as decimal point.
     Mlt::Factory::init();
+    LocaleHandling::resetLocale();
 }
 
 MltPreview::~MltPreview()
@@ -48,12 +48,10 @@ MltPreview::~MltPreview()
 
 bool MltPreview::create(const QString &path, int width, int height, QImage &img)
 {
-    auto *profile = new Mlt::Profile();
-    Mlt::Producer *producer = new Mlt::Producer(*profile, path.toUtf8().data());
+    std::unique_ptr<Mlt::Profile> profile(new Mlt::Profile());
+    std::shared_ptr<Mlt::Producer>producer(new Mlt::Producer(*profile.get(), path.toUtf8().data()));
 
     if (producer->is_blank()) {
-        delete producer;
-        delete profile;
         return false;
     }
     int frame = 75;
@@ -69,6 +67,24 @@ bool MltPreview::create(const QString &path, int width, int height, QImage &img)
         wanted_height = height;
         wanted_width = height * ar;
     }
+    // We don't need audio
+    producer->set("audio_index", -1);
+
+    // Add normalizers    
+    Mlt::Filter scaler(*profile.get(), "swscale");
+    Mlt::Filter padder(*profile.get(), "resize");
+    Mlt::Filter converter(*profile.get(), "avcolor_space");
+
+    if (scaler.is_valid()) {
+        producer->attach(scaler);
+    }
+    if (padder.is_valid()) {
+        producer->attach(padder);
+    }
+    if (converter.is_valid()) {
+        producer->attach(converter);
+    }
+    
 
     // img = getFrame(producer, frame, width, height);
     while (variance <= 40 && ct < 4) {
@@ -77,27 +93,23 @@ bool MltPreview::create(const QString &path, int width, int height, QImage &img)
         frame += 100 * ct;
         ct++;
     }
-
-    delete producer;
-    delete profile;
     return (!img.isNull());
 }
 
-QImage MltPreview::getFrame(Mlt::Producer *producer, int framepos, int width, int height)
+QImage MltPreview::getFrame(std::shared_ptr<Mlt::Producer> producer, int framepos, int width, int height)
 {
-    QImage mltImage(width, height, QImage::Format_ARGB32_Premultiplied);
+    QImage mltImage(width, height, QImage::Format_ARGB32);
     if (producer == nullptr) {
         return mltImage;
     }
 
     producer->seek(framepos);
     Mlt::Frame *frame = producer->get_frame();
-    if (frame == nullptr) {
+    if (frame == nullptr || !frame->is_valid()) {
         return mltImage;
     }
 
     mlt_image_format format = mlt_image_rgb24a;
-
     const uchar *imagedata = frame->get_image(format, width, height);
     if (imagedata != nullptr) {
         memcpy(mltImage.bits(), imagedata, width * height * 4);

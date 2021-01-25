@@ -29,6 +29,12 @@
 #include <QQmlContext>
 #include <QStandardPaths>
 #include <memory>
+#include <QFormLayout>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QLineEdit>
+#include <QTextEdit>
+
 EffectListWidget::EffectListWidget(QWidget *parent)
     : AssetListWidget(parent)
 {
@@ -53,29 +59,28 @@ EffectListWidget::EffectListWidget(QWidget *parent)
 
 void EffectListWidget::updateFavorite(const QModelIndex &index)
 {
-    m_proxyModel->dataChanged(index, index, QVector<int>());
+    emit m_proxyModel->dataChanged(index, index, QVector<int>());
     m_proxyModel->reloadFilterOnFavorite();
     emit reloadFavorites();
 }
 
 EffectListWidget::~EffectListWidget()
 {
-    delete m_proxy;
     qDebug() << " - - -Deleting effect list widget";
 }
 
 void EffectListWidget::setFilterType(const QString &type)
 {
     if (type == "video") {
-        static_cast<EffectFilter *>(m_proxyModel.get())->setFilterType(true, EffectType::Video);
+        static_cast<EffectFilter *>(m_proxyModel.get())->setFilterType(true, AssetListType::AssetType::Video);
     } else if (type == "audio") {
-        static_cast<EffectFilter *>(m_proxyModel.get())->setFilterType(true, EffectType::Audio);
+        static_cast<EffectFilter *>(m_proxyModel.get())->setFilterType(true, AssetListType::AssetType::Audio);
     } else if (type == "custom") {
-        static_cast<EffectFilter *>(m_proxyModel.get())->setFilterType(true, EffectType::Custom);
+        static_cast<EffectFilter *>(m_proxyModel.get())->setFilterType(true, AssetListType::AssetType::Custom);
     } else if (type == "favorites") {
-        static_cast<EffectFilter *>(m_proxyModel.get())->setFilterType(true, EffectType::Favorites);
+        static_cast<EffectFilter *>(m_proxyModel.get())->setFilterType(true, AssetListType::AssetType::Favorites);
     } else {
-        static_cast<EffectFilter *>(m_proxyModel.get())->setFilterType(true, EffectType::Preferred);
+        static_cast<EffectFilter *>(m_proxyModel.get())->setFilterType(true, AssetListType::AssetType::Preferred);
     }
 }
 
@@ -85,12 +90,48 @@ QString EffectListWidget::getMimeType(const QString &assetId) const
     return QStringLiteral("kdenlive/effect");
 }
 
+void EffectListWidget::reloadCustomEffectIx(const QModelIndex &index)
+{
+    static_cast<EffectTreeModel *>(m_model.get())->reloadEffectFromIndex(m_proxyModel->mapToSource(index));
+    m_proxyModel->sort(0, Qt::AscendingOrder);
+}
+
+
 void EffectListWidget::reloadCustomEffect(const QString &path)
 {
     static_cast<EffectTreeModel *>(m_model.get())->reloadEffect(path);
+    m_proxyModel->sort(0, Qt::AscendingOrder);
 }
 
 void EffectListWidget::reloadEffectMenu(QMenu *effectsMenu, KActionCategory *effectActions)
 {
     m_model->reloadAssetMenu(effectsMenu, effectActions);
+}
+
+void EffectListWidget::editCustomAsset(const QModelIndex &index)
+{
+    QDialog dialog(this);
+    QFormLayout form(&dialog);
+    QString currentName = getName(index);
+    QString desc = getDescription(true, index);
+    // Strip effect Name
+    if (desc.contains(QLatin1Char('('))) {
+        desc = desc.section(QLatin1Char('('), 0, -2).simplified();
+    }
+    QLineEdit *effectName = new QLineEdit(currentName, &dialog);
+    QTextEdit *descriptionBox = new QTextEdit(desc, &dialog);
+    form.addRow(i18n("Name : "), effectName);
+    form.addRow(i18n("Comments : "), descriptionBox);
+    QDialogButtonBox buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, Qt::Horizontal, &dialog);
+    form.addRow(&buttonBox);
+    QObject::connect(&buttonBox, SIGNAL(accepted()), &dialog, SLOT(accept()));
+    QObject::connect(&buttonBox, SIGNAL(rejected()), &dialog, SLOT(reject()));
+    if(dialog.exec() == QDialog::Accepted) {
+        QString name = effectName->text();
+        QString enteredDescription = descriptionBox->toPlainText();
+        if (name.trimmed().isEmpty() && enteredDescription.trimmed().isEmpty()) {
+           return;
+        }
+        m_model->editCustomAsset(name, enteredDescription, m_proxyModel->mapToSource(index));
+    }
 }

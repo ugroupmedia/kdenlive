@@ -18,12 +18,11 @@
 
 import QtQuick 2.11
 import QtQuick.Controls 2.4
-import QtQuick.Controls.Styles 1.4
 
-Rectangle {
+Item {
     id: rulerRoot
     // The standard width for labels. Depends on format used (frame number or full timecode)
-    property int labelSize: fontMetrics.tightBoundingRect(timeline.timecode(36000)).width
+    property int labelSize: fontMetrics.boundingRect(timeline.timecode(36000)).width
     // The spacing between labels. Depends on labelSize
     property real labelSpacing: labelSize
     // The space we want between each ticks in the ruler
@@ -50,7 +49,7 @@ Rectangle {
     }
 
     function adjustFormat() {
-        rulerRoot.labelSize = fontMetrics.tightBoundingRect(timeline.timecode(36000)).width
+        rulerRoot.labelSize = fontMetrics.boundingRect(timeline.timecode(36000)).width
         adjustStepSize()
         repaintRuler()
     }
@@ -60,8 +59,6 @@ Rectangle {
         tickRepeater.model = 0
         tickRepeater.model = scrollView.width / rulerRoot.tickSpacing + 2
     }
-    color: root.color
-    clip: true
 
     // Timeline preview stuff
     Repeater {
@@ -101,7 +98,7 @@ Rectangle {
     Repeater {
         id: tickRepeater
         model: scrollView.width / rulerRoot.tickSpacing + 2
-        property int offset: Math.floor(scrollView.flickableItem.contentX /rulerRoot.tickSpacing)
+        property int offset: Math.floor(scrollView.contentX /rulerRoot.tickSpacing)
         Item {
             property int realPos: (tickRepeater.offset + index) * rulerRoot.tickSpacing / timeline.scaleFactor
             x: realPos * timeline.scaleFactor
@@ -119,7 +116,7 @@ Rectangle {
                 anchors.top: parent.top
                 anchors.topMargin: 2
                 text: timeline.timecode(parent.realPos)
-                font.pointSize: root.fontUnit
+                font: miniFont
                 color: activePalette.windowText
             }
         }
@@ -149,13 +146,13 @@ Rectangle {
             MouseArea {
                 id: moveMouseArea
                 anchors.fill: parent
-                property double startX
                 hoverEnabled: true
                 drag.target: zone
                 drag.axis: Drag.XAxis
                 drag.smoothed: false
+                property var startZone
                 onPressed: {
-                    startX = zone.x
+                    startZone = Qt.point(timeline.zoneIn, timeline.zoneOut)
                 }
                 onEntered: {
                     resizeActive = true
@@ -164,6 +161,7 @@ Rectangle {
                     resizeActive = false
                 }
                 onReleased: {
+                    timeline.updateZone(startZone, Qt.point(timeline.zoneIn, timeline.zoneOut), true)
                     resizeActive = false
                 }
                 onPositionChanged: {
@@ -190,7 +188,7 @@ Rectangle {
                 id: inLabel
                 anchors.fill: parent
                 text: timeline.timecode(timeline.zoneIn)
-                font.pointSize: root.fontUnit
+                font: miniFont
                 color: activePalette.highlightedText
             }
         }
@@ -205,7 +203,7 @@ Rectangle {
                 id: outLabel
                 anchors.fill: parent
                 text: timeline.timecode(timeline.zoneOut)
-                font.pointSize: root.fontUnit
+                font: miniFont
                 color: activePalette.highlightedText
             }
         }
@@ -222,7 +220,7 @@ Rectangle {
                 anchors.fill: parent
                 horizontalAlignment: Text.AlignHCenter
                 text: timeline.timecode(timeline.zoneOut - timeline.zoneIn)
-                font.pointSize: root.fontUnit
+                font: miniFont
                 color: activePalette.highlightedText
             }
         }
@@ -244,6 +242,7 @@ Rectangle {
                     drag.target: parent
                     drag.axis: Drag.XAxis
                     drag.smoothed: false
+                    property var startZone
                     onEntered: {
                         resizeActive = true
                         parent.opacity = 1
@@ -255,10 +254,12 @@ Rectangle {
                     onPressed: {
                         parent.anchors.left = undefined
                         parent.opacity = 1
+                        startZone = Qt.point(timeline.zoneIn, timeline.zoneOut)
                     }
                     onReleased: {
                         resizeActive = false
                         parent.anchors.left = zone.left
+                        timeline.updateZone(startZone, Qt.point(timeline.zoneIn, timeline.zoneOut), true)
                     }
                     onPositionChanged: {
                         if (mouse.buttons === Qt.LeftButton) {
@@ -290,6 +291,7 @@ Rectangle {
                     drag.target: parent
                     drag.axis: Drag.XAxis
                     drag.smoothed: false
+                    property var startZone
                     onEntered: {
                         resizeActive = true
                         parent.opacity = 1
@@ -301,10 +303,12 @@ Rectangle {
                     onPressed: {
                         parent.anchors.right = undefined
                         parent.opacity = 1
+                        startZone = Qt.point(timeline.zoneIn, timeline.zoneOut)
                     }
                     onReleased: {
                         resizeActive = false
                         parent.anchors.right = zone.right
+                        timeline.updateZone(startZone, Qt.point(timeline.zoneIn, timeline.zoneOut), true)
                     }
                     onPositionChanged: {
                         if (mouse.buttons === Qt.LeftButton) {

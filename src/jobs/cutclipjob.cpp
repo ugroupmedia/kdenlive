@@ -41,7 +41,7 @@
 #include <QPointer>
 
 CutClipJob::CutClipJob(const QString &binId, const QString sourcePath, GenTime inTime, GenTime outTime, const QString destPath, QStringList encodingParams)
-    : AbstractClipJob(CUTJOB, binId)
+    : AbstractClipJob(CUTJOB, binId, {ObjectType::BinClip, binId.toInt()})
     , m_sourceUrl(sourcePath)
     , m_destUrl(destPath)
     , m_done(false)
@@ -83,7 +83,7 @@ int CutClipJob::prepareJob(const std::shared_ptr<JobManager> &ptr, const std::ve
     QDir dir = finfo.absoluteDir();
     QString inString = QString::number((int)inTime.seconds());
     QString outString = QString::number((int)outTime.seconds());
-    QString path = dir.absoluteFilePath(fileName + QString("-%1-%2.").arg(inString).arg(outString) + transcoderExt);
+    QString path = dir.absoluteFilePath(fileName + QString("-%1-%2.").arg(inString, outString) + transcoderExt);
 
     QPointer<QDialog> d = new QDialog(QApplication::activeWindow());
     Ui::CutJobDialog_UI ui;
@@ -104,7 +104,11 @@ int CutClipJob::prepareJob(const std::shared_ptr<JobManager> &ptr, const std::ve
         return -1;
     }
     path = ui.file_url->url().toLocalFile();
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     QStringList encodingParams = ui.extra_params->toPlainText().split(QLatin1Char(' '), QString::SkipEmptyParts);
+#else
+    QStringList encodingParams = ui.extra_params->toPlainText().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+#endif
     KdenliveSettings::setAdd_new_clip(ui.add_clip->isChecked());
     delete d;
 

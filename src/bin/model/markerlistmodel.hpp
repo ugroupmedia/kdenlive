@@ -64,6 +64,7 @@ public:
        @param type is the type (color) associated with the marker. If -1 is passed, then the value is pulled from kdenlive's defaults
      */
     bool addMarker(GenTime pos, const QString &comment, int type = -1);
+    bool addMarkers(QMap <GenTime, QString> markers, int type = -1);
 
 protected:
     /* @brief Same function but accumulates undo/redo */
@@ -77,7 +78,6 @@ public:
     /* @brief Delete all the markers of the model */
     bool removeAllMarkers();
 
-protected:
     /* @brief Same function but accumulates undo/redo */
     bool removeMarker(GenTime pos, Fun &undo, Fun &redo);
 
@@ -100,7 +100,7 @@ public:
     QList<CommentedTime> getAllMarkers() const;
 
     /* @brief Returns all markers positions in model */
-    std::vector<size_t> getSnapPoints() const;
+    std::vector<int> getSnapPoints() const;
 
     /* @brief Returns true if a marker exists at given pos
        Notice that add/remove queries are done in real time (gentime), but this request is made in frame
@@ -125,7 +125,7 @@ public:
        @param clip: pointer to the clip if we are editing a marker
        @return true if dialog was accepted and modification successful
      */
-    bool editMarkerGui(const GenTime &pos, QWidget *parent, bool createIfNotFound, ClipController *clip = nullptr);
+    bool editMarkerGui(const GenTime &pos, QWidget *parent, bool createIfNotFound, ClipController *clip = nullptr, bool createOnly = false);
 
     // Mandatory overloads
     QVariant data(const QModelIndex &index, int role) const override;

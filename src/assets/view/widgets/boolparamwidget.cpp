@@ -41,7 +41,13 @@ BoolParamWidget::BoolParamWidget(std::shared_ptr<AssetParameterModel> model, QMo
     slotRefresh();
 
     // emit the signal of the base class when appropriate
-    connect(this->m_checkBox, &QCheckBox::stateChanged, [this](int) { emit valueChanged(m_index, QString::number(m_checkBox->isChecked()), true); });
+    connect(this->m_checkBox, &QCheckBox::stateChanged, this, [this](int state) {
+        // To represent 'checked' status, Qt uses number '2', but
+        // the boolean parameters in MLT effects use number '1'
+        if (state == 2) {
+            state = 1;
+        }
+        emit valueChanged(m_index, QString::number(state), true); });
 }
 
 void BoolParamWidget::slotShowComment(bool show)
@@ -53,6 +59,7 @@ void BoolParamWidget::slotShowComment(bool show)
 
 void BoolParamWidget::slotRefresh()
 {
+    QSignalBlocker bk(m_checkBox);
     bool checked = m_model->data(m_index, AssetParameterModel::ValueRole).toInt();
     m_checkBox->setChecked(checked);
 }

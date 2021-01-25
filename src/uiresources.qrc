@@ -9,6 +9,7 @@
     <file alias="kdenlivemonitorcornerscene.qml">monitor/view/kdenlivemonitorcornerscene.qml</file>
     <file alias="kdenlivemonitorrotoscene.qml">monitor/view/kdenlivemonitorrotoscene.qml</file>
     <file alias="kdenlivemonitorsplit.qml">monitor/view/kdenlivemonitorsplit.qml</file>
+    <file alias="kdenlivemonitorsplittracks.qml">monitor/view/kdenlivemonitorsplittracks.qml</file>
     <file alias="kdenlivemonitorripple.qml">monitor/view/kdenlivemonitorripple.qml</file>
     <file alias="SceneToolBar.qml">monitor/view/SceneToolBar.qml</file>
     <file alias="EffectToolBar.qml">monitor/view/EffectToolBar.qml</file>
@@ -24,12 +25,12 @@
     <file alias="Track.qml">timeline2/view/qml/Track.qml</file>
     <file alias="Ruler.qml">timeline2/view/qml/Ruler.qml</file>
     <file alias="Clip.qml">timeline2/view/qml/Clip.qml</file>
+    <file alias="SubTitle.qml">timeline2/view/qml/SubTitle.qml</file>
+    <file alias="MixShape.qml">timeline2/view/qml/MixShape.qml</file>
     <file alias="ClipThumbs.qml">timeline2/view/qml/ClipThumbs.qml</file>
     <file alias="ClipAudioThumbs.qml">timeline2/view/qml/ClipAudioThumbs.qml</file>
     <file alias="KeyframeView.qml">timeline2/view/qml/KeyframeView.qml</file>
     <file alias="Composition.qml">timeline2/view/qml/Composition.qml</file>
-    <file alias="ClipMenu.qml">timeline2/view/qml/ClipMenu.qml</file>
-    <file alias="CompositionMenu.qml">timeline2/view/qml/CompositionMenu.qml</file>
     <file alias="PulsingAnimation.qml">timeline2/view/qml/PulsingAnimation.qml</file>
     <file alias="CornerSelectionShadow.qml">timeline2/view/qml/CornerSelectionShadow.qml</file>
     <file alias="Timeline.js">timeline2/view/qml/Timeline.js</file>

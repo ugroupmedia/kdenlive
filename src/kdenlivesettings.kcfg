@@ -9,6 +9,10 @@
       <label>Bin treeview headers state.</label>
       <default></default>
     </entry>
+    <entry name="binSorting" type="Int">
+      <label>Bin sorting column.</label>
+      <default>0</default>
+    </entry>
     <entry name="binMode" type="Int">
       <label>Bin view mode.</label>
       <default>0</default>
@@ -21,9 +25,17 @@
       <label>User added clip file extensions.</label>
       <default></default>
     </entry>
+    <entry name="hoverPreview" type="Bool">
+      <label>Generate and show video preview when moving mouse over clip thumbnail.</label>
+      <default>false</default>
+    </entry>
   </group>
 
   <group name="misc">
+    <entry name="cleanCacheMonths" type="Int">
+      <label>Number of months to discard cache data.</label>
+      <default>6</default>
+    </entry>
     <entry name="openlastproject" type="Bool">
       <label>Open last project on startup.</label>
       <default>false</default>
@@ -68,9 +80,23 @@
       <label>Default image sequence frame duration.</label>
       <default>00:00:03:00</default>
     </entry>
+    
+    <entry name="mix_duration" type="String">
+      <label>Default mix transition duration.</label>
+      <default>00:00:01:00</default>
+    </entry>
+    
+    <entry name="subtitle_duration" type="String">
+      <label>Default subtitle duration.</label>
+      <default>00:00:05:00</default>
+    </entry>
 
     <entry name="autoimagesequence" type="Bool">
       <label>Automatically import image sequences.</label>
+      <default>false</default>
+    </entry>
+    <entry name="disableimagescaling" type="Bool">
+      <label>Add a filter to disable default image scaling.</label>
       <default>false</default>
     </entry>
 
@@ -134,6 +160,11 @@
     <entry name="audiotracks" type="Int">
       <label>Default number of audio tracks.</label>
       <default>2</default>
+    </entry>
+
+    <entry name="audio_channels" type="Int">
+      <label>Default number of audio channels per track.</label>
+      <default>0</default>
     </entry>
 
     <entry name="enableproxy" type="Bool">
@@ -231,7 +262,7 @@
   <group name="timeline">
     <entry name="headerwidth" type="Int">
       <label>Default width for timeline track headers.</label>
-      <default>140</default>
+      <default>0</default>
     </entry>
     <entry name="defaultkeyframeinterp" type="Int">
       <label>Default interpolation for keyframes.</label>
@@ -244,6 +275,16 @@
     <entry name="autopreview" type="Bool">
       <label>Automatically regenerate dirty zones of timeline preview.</label>
       <default>false</default>
+    </entry>
+
+    <entry name="multistream" type="Int">
+      <label>Should we enable all audio streams by default.</label>
+      <default>0</default>
+    </entry>
+
+    <entry name="multistream_checktrack" type="Bool">
+      <label>Check if project has enough tracks on multi stream clips, and propose to add new tracks.</label>
+      <default>true</default>
     </entry>
 
     <entry name="videothumbnails" type="Bool">
@@ -263,16 +304,26 @@
 
     <entry name="showmarkers" type="Bool">
       <label>Display clip markers comments in timeline.</label>
-      <default>false</default>
+      <default>true</default>
     </entry>
 
     <entry name="displayallchannels" type="Bool">
       <label>Display all channels in audio thumbnails.</label>
       <default>false</default>
     </entry>
+    
+    <entry name="normalizechannels" type="Bool">
+      <label>Normalize audio channels in thumbnails.</label>
+      <default>true</default>
+    </entry>
 
     <entry name="autoscroll" type="Bool">
       <label>Auto scroll timeline while playing.</label>
+      <default>true</default>
+    </entry>
+
+    <entry name="pauseonseek" type="Bool">
+      <label>Pause playback when seeking.</label>
       <default>true</default>
     </entry>
 
@@ -452,9 +503,19 @@
       <label>Open Library in default system folder.</label>
       <default>true</default>
     </entry>
+    
+    <entry name="videotodefaultfolder" type="Bool">
+      <label>Save titles, scripted renderings in default system folder.</label>
+      <default>true</default>
+    </entry>
 
     <entry name="libraryfolder" type="Path">
       <label>Default folder for library.</label>
+      <default></default>
+    </entry>
+    
+    <entry name="videofolder" type="Path">
+      <label>Default folder for various stored files, like titles, scripted rendering.</label>
       <default></default>
     </entry>
 
@@ -738,8 +799,8 @@
       <default>true</default>
     </entry>
 
-    <entry name="automatictransitions" type="Bool">
-      <label>New transitions are automatic transitions.</label>
+    <entry name="tagsintimeline" type="Bool">
+      <label>Show color tags in timeline.</label>
       <default>true</default>
     </entry>
 
@@ -750,7 +811,7 @@
 
     <entry name="keyframeseek" type="Bool">
       <label>When editing an effect with position, seek to the keyframe pos.</label>
-      <default>false</default>
+      <default>true</default>
     </entry>
     <entry name="showbuiltstack" type="Bool">
       <label>Show builtin effect stack.</label>
@@ -775,6 +836,16 @@
       <label>Show overlay info on monitor (in / out points, markers,...).</label>
       <default>0x05</default>
     </entry>
+    
+    <entry name="previewScaling" type="Int">
+      <label>Divide monitor resolution by this factor to speedup preview.</label>
+      <default>1</default>
+    </entry>
+    
+    <entry name="autoKeyframe" type="Bool">
+      <label>Automatically create a new keyframe on keyframe move.</label>
+      <default>true</default>
+    </entry>
 
     <entry name="clipMonitorOverlayGuides" type="Int">
       <label>index of current guides overlay for clip monitor.</label>
@@ -783,6 +854,11 @@
     <entry name="projectMonitorOverlayGuides" type="Int">
       <label>index of current guides overlay for project monitor.</label>
       <default>0</default>
+    </entry>
+    
+    <entry name="alwaysShowMonitorAudio" type="Bool">
+      <label>Always display audio thumbs in clip monitor.</label>
+      <default>false</default>
     </entry>
 
     <entry name="displayAudioOverlay" type="Bool">
@@ -839,6 +915,21 @@
       <label>Color to preselect in the color clip dialog.</label>
       <default>#000000</default>
     </entry>
+    
+    <entry name="showSubtitles" type="Bool">
+      <label>Show subtitle track.</label>
+      <default>false</default>
+    </entry>
+    
+    <entry name="thumbColor1" type="Color">
+      <label>Color to draw even audio channels.</label>
+      <default>#2ac1a0</default>
+    </entry>
+    
+    <entry name="thumbColor2" type="Color">
+      <label>Color to draw odd audio channels.</label>
+      <default>#2ed172</default>
+    </entry>
 
     <entry name="rescalekeepratio" type="Bool">
       <label>Keep aspect ratio in render dialog rescale widget.</label>
@@ -859,7 +950,7 @@
       <label>True if slideshow default method is MIME type.</label>
       <default>true</default>
     </entry>
-    
+
     <entry name="monitorscene_directupdate" type="Bool">
       <label>Update parameters while monitor scene changes.</label>
       <default>false</default>
@@ -871,14 +962,14 @@
 
     <entry name="enableaudiospectrum" type="Bool">
       <label>Send frames to audiospectrum scope for live analysis.</label>
-      <default>false</default>
+      <default>true</default>
     </entry>
 
     <entry name="showstopmotionthumbs" type="Bool">
       <label>Show sequence thumbnails in stopmotion widget.</label>
       <default>true</default>
     </entry> 
-    
+
     <entry name="captureinterval" type="Int">
       <label>Interval between each capture (in seconds).</label>
       <default>5</default>
@@ -933,7 +1024,7 @@
       <label>Show additional controls in the c0rners on-monitor widget.</label>
       <default>false</default>
     </entry>
-    
+
     <entry name="projectloading_avformatnovalidate" type="Bool">
       <label>Do not validate the video files when loading a project for the sake of speed.</label>
       <default>false</default>
@@ -943,12 +1034,12 @@
       <label>Display audio levels.</label>
       <default>true</default>
     </entry>
-    
+
     <entry name="enable_recording_preview" type="Bool">
       <label>Should we display video frames while capturing.</label>
       <default>true</default>
     </entry>
-    
+
     <entry name="add_new_clip" type="Bool">
       <label>Add cut clips to project after transcoding.</label>
       <default>true</default>
@@ -1019,6 +1110,10 @@
         <entry name="titlerbg" type="Int">
         <label>Default background for titler.</label>
         <default>0</default>
+        </entry>
+        <entry name="titlerShowbg" type="Bool">
+        <label>Show titler background.</label>
+        <default>false</default>
         </entry>
    </group>
 </kcfg>

@@ -265,16 +265,15 @@ void DvdWizardVob::slotCheckProfiles()
 void DvdWizardVob::slotAddVobList(QList<QUrl> list)
 {
     if (list.isEmpty()) {
-        QString allExtensions = ClipCreationDialog::getExtensions().join(QLatin1Char(' '));
-        QString dialogFilter = i18n("All Supported Files") + QStringLiteral(" (") + allExtensions + QStringLiteral(");; ") + i18n("MPEG Files") +
-                               QStringLiteral(" (*.mpeg *.mpg *.vob);; ") + i18n("All Files") + QStringLiteral(" (*.*)");
+        auto extraFilters = QStringList() << i18n("MPEG Files") + QStringLiteral(" (*.mpeg *.mpg *.vob)") << i18n("All Files") + QStringLiteral(" (*.*)");
+        const QString dialogFilter = ClipCreationDialog::getExtensionsFilter(extraFilters);
         list = QFileDialog::getOpenFileUrls(this, i18n("Add new video file"), QUrl::fromLocalFile(KRecentDirs::dir(QStringLiteral(":KdenliveDvdFolder"))),
                                             dialogFilter);
         if (!list.isEmpty()) {
             KRecentDirs::add(QStringLiteral(":KdenliveDvdFolder"), list.at(0).adjusted(QUrl::RemoveFilename).toLocalFile());
         }
     }
-    for (const QUrl &url : list) {
+    for (const QUrl &url : qAsConst(list)) {
         slotAddVobFile(url, QString(), false);
     }
     slotCheckVobList();

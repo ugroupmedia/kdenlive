@@ -932,6 +932,10 @@ TEST_CASE("Clip manipulation", "[ClipModel]")
         QString binId3 = createProducerWithSound(profile_model, binModel);
 
         int cid6 = -1;
+        // Setup insert stream data
+        QMap <int, QString>audioInfo;
+        audioInfo.insert(1,QStringLiteral("stream1"));
+        timeline->m_binAudioTargets = audioInfo;
         REQUIRE(timeline->requestClipInsertion(binId3, tid5, 3, cid6, true, true, false));
         int cid7 = timeline->m_groups->getSplitPartner(cid6);
 
@@ -1144,7 +1148,7 @@ TEST_CASE("Undo and Redo", "[ClipModel]")
             int temp;
             Fun undo = []() { return true; };
             Fun redo = []() { return true; };
-            REQUIRE_FALSE(timeline->requestClipCreation("impossible bin id", temp, PlaylistState::VideoOnly, 1., undo, redo));
+            REQUIRE_FALSE(timeline->requestClipCreation("impossible bin id", temp, PlaylistState::VideoOnly, 1, 1., false, undo, redo));
         }
 
         auto state0 = [&]() {
@@ -1158,7 +1162,7 @@ TEST_CASE("Undo and Redo", "[ClipModel]")
         {
             Fun undo = []() { return true; };
             Fun redo = []() { return true; };
-            REQUIRE(timeline->requestClipCreation(binId3, cid3, PlaylistState::VideoOnly, 1., undo, redo));
+            REQUIRE(timeline->requestClipCreation(binId3, cid3, PlaylistState::VideoOnly, 1, 1., false, undo, redo));
             pCore->pushUndo(undo, redo, QString());
         }
 
@@ -1175,7 +1179,7 @@ TEST_CASE("Undo and Redo", "[ClipModel]")
         {
             Fun undo = []() { return true; };
             Fun redo = []() { return true; };
-            REQUIRE(timeline->requestClipCreation(binId4, cid4, PlaylistState::VideoOnly, 1., undo, redo));
+            REQUIRE(timeline->requestClipCreation(binId4, cid4, PlaylistState::VideoOnly, 1, 1., false, undo, redo));
             pCore->pushUndo(undo, redo, QString());
         }
 
@@ -1638,7 +1642,7 @@ TEST_CASE("Undo and Redo", "[ClipModel]")
         {
             std::function<bool(void)> undo = []() { return true; };
             std::function<bool(void)> redo = []() { return true; };
-            REQUIRE(timeline->requestClipCreation(binId, cid6, PlaylistState::VideoOnly, 1., undo, redo));
+            REQUIRE(timeline->requestClipCreation(binId, cid6, PlaylistState::VideoOnly, 1, 1., false, undo, redo));
             pCore->pushUndo(undo, redo, QString());
         }
         int l = timeline->getClipPlaytime(cid6);
@@ -1786,8 +1790,8 @@ TEST_CASE("Snapping", "[Snapping]")
         int beg = 30;
         // in the absence of other clips, a valid move shouldn't be modified
         for (int snap = -1; snap <= 5; ++snap) {
-            REQUIRE(timeline->suggestClipMove(cid2, tid2, beg, -1, snap) == beg);
-            REQUIRE(timeline->suggestClipMove(cid2, tid2, beg + length, -1, snap) == beg + length);
+            REQUIRE(timeline->suggestClipMove(cid2, tid2, beg, -1, snap).at(0) == beg);
+            REQUIRE(timeline->suggestClipMove(cid2, tid2, beg + length, -1, snap).at(0) == beg + length);
             REQUIRE(timeline->checkConsistency());
         }
 
@@ -1797,11 +1801,11 @@ TEST_CASE("Snapping", "[Snapping]")
         // Now a clip in second track should snap to beginning
         auto check_snap = [&](int pos, int perturb, int snap) {
             if (snap >= perturb) {
-                REQUIRE(timeline->suggestClipMove(cid2, tid2, pos + perturb, -1, snap) == pos);
-                REQUIRE(timeline->suggestClipMove(cid2, tid2, pos - perturb, -1, snap) == pos);
+                REQUIRE(timeline->suggestClipMove(cid2, tid2, pos + perturb, -1, snap).at(0) == pos);
+                REQUIRE(timeline->suggestClipMove(cid2, tid2, pos - perturb, -1, snap).at(0) == pos);
             } else {
-                REQUIRE(timeline->suggestClipMove(cid2, tid2, pos + perturb, -1, snap) == pos + perturb);
-                REQUIRE(timeline->suggestClipMove(cid2, tid2, pos - perturb, -1, snap) == pos - perturb);
+                REQUIRE(timeline->suggestClipMove(cid2, tid2, pos + perturb, -1, snap).at(0) == pos + perturb);
+                REQUIRE(timeline->suggestClipMove(cid2, tid2, pos - perturb, -1, snap).at(0) == pos - perturb);
             }
         };
         for (int snap = -1; snap <= 5; ++snap) {
@@ -1842,7 +1846,7 @@ TEST_CASE("Operations under locked tracks", "[Locked]")
     QString aCompo;
     // Look for a compo
     QVector<QPair<QString, QString>> transitions = TransitionsRepository::get()->getNames();
-    for (const auto &trans : transitions) {
+    for (const auto &trans : qAsConst(transitions)) {
         if (TransitionsRepository::get()->isComposition(trans.first)) {
             aCompo = trans.first;
             break;
@@ -1952,7 +1956,7 @@ TEST_CASE("Operations under locked tracks", "[Locked]")
     }
     SECTION("Can't move composition on locked track")
     {
-        int compo = CompositionModel::construct(timeline, aCompo);
+        int compo = CompositionModel::construct(timeline, aCompo, QString());
         timeline->setTrackLockedState(tid1, true);
         REQUIRE(timeline->getTrackById(tid1)->isLocked());
         REQUIRE(timeline->checkConsistency());
@@ -2025,7 +2029,7 @@ TEST_CASE("Operations under locked tracks", "[Locked]")
     }
     SECTION("Can't resize composition on locked track")
     {
-        int compo = CompositionModel::construct(timeline, aCompo);
+        int compo = CompositionModel::construct(timeline, aCompo, QString());
         REQUIRE(timeline->requestCompositionMove(compo, tid1, 2));
         REQUIRE(timeline->requestItemResize(compo, 20, true) == 20);
 

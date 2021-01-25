@@ -62,12 +62,12 @@ public:
     bool appendEffect(const QString &effectId, bool makeCurrent = false);
     /* @brief Copy an existing effect and append it at the bottom of the stack
      */
-    bool copyEffect(const std::shared_ptr<AbstractEffectItem> &sourceItem, PlaylistState::ClipState state);
+    bool copyEffect(const std::shared_ptr<AbstractEffectItem> &sourceItem, PlaylistState::ClipState state, bool logUndo = true);
     bool copyXmlEffect(QDomElement effect);
     /* @brief Import all effects from the given effect stack
      */
     bool importEffects(const std::shared_ptr<EffectStackModel> &sourceStack, PlaylistState::ClipState state);
-    void importEffects(const std::weak_ptr<Mlt::Service> &service, PlaylistState::ClipState state, bool alreadyExist = false);
+    void importEffects(const std::weak_ptr<Mlt::Service> &service, PlaylistState::ClipState state, bool alreadyExist = false, QString originalDecimalPoint = QString());
     bool removeFade(bool fromStart);
 
     /* @brief This function change the global (timeline-wise) enabled state of the effects
@@ -109,6 +109,8 @@ public:
     bool removeKeyFrame(int frame);
     /** Update a keyframe in all model parameters (with value updated only in first parameter)*/
     bool updateKeyFrame(int oldFrame, int newFrame, QVariant normalisedVal);
+    /** Returns true if active effect has a keyframe at pos p*/
+    bool hasKeyFrame(int frame);
     /** Remove unwanted fade effects, mostly after a cut operation */
     void cleanFadeEffects(bool outEffects, Fun &undo, Fun &redo);
 
@@ -139,6 +141,12 @@ public:
 
     /* @brief This is a convenience function that helps check if the tree is in a valid state */
     bool checkConsistency() override;
+
+    /* @brief Return true if an asset id is already added to this effect stack */
+    bool hasEffect(const QString &assetId) const;
+    
+    /* @brief Remove all effects for this stack */
+    void removeAllEffects(Fun &undo, Fun & redo);
 
 public slots:
     /* @brief Delete an effect from the stack */

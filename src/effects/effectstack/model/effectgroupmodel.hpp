@@ -39,6 +39,7 @@ public:
 
     /* @brief Return true if the effect applies only to audio */
     bool isAudio() const override;
+    bool isUnique() const override;
 
     /* @brief This function plants the effect into the given service in last position
      */
@@ -52,7 +53,7 @@ public:
 protected:
     EffectGroupModel(const QList<QVariant> &data, QString name, const std::shared_ptr<AbstractTreeModel> &stack, bool isRoot = false);
 
-    void updateEnable() override;
+    void updateEnable(bool updateTimeline = true) override;
 
     QString m_name;
 };

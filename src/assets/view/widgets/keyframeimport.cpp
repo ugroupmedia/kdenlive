@@ -46,8 +46,7 @@
 #include "mlt++/MltProperties.h"
 
 
-KeyframeImport::KeyframeImport(const QString &animData, std::shared_ptr<AssetParameterModel> model, QList<QPersistentModelIndex> indexes,
-                               QWidget *parent)
+KeyframeImport::KeyframeImport(const QString &animData, std::shared_ptr<AssetParameterModel> model, QList<QPersistentModelIndex> indexes, int parentIn, int parentDuration, QWidget *parent)
     : QDialog(parent)
     , m_model(std::move(model))
     , m_indexes(indexes)
@@ -105,7 +104,7 @@ KeyframeImport::KeyframeImport(const QString &animData, std::shared_ptr<AssetPar
     }
     auto list = json.array();
     int ix = 0;
-    for (const auto &entry : list) {
+    for (const auto &entry : qAsConst(list)) {
         if (!entry.isObject()) {
             qDebug() << "Warning : Skipping invalid marker data";
             continue;
@@ -141,7 +140,7 @@ KeyframeImport::KeyframeImport(const QString &animData, std::shared_ptr<AssetPar
     // Zone in / out
     in = qMax(0, in);
     if (out <= 0) {
-        out = in + m_model->data(indexes.first(), AssetParameterModel::ParentDurationRole).toInt();
+        out = in + parentDuration;
     }
     m_inPoint = new PositionWidget(i18n("In"), in, 0, out, pCore->currentDoc()->timecode(), QString(), this);
     connect(m_inPoint, &PositionWidget::valueChanged, this, &KeyframeImport::updateDisplay);
@@ -219,7 +218,8 @@ KeyframeImport::KeyframeImport(const QString &animData, std::shared_ptr<AssetPar
     lay->addLayout(l1);
 
     // Output offset
-    m_offsetPoint = new PositionWidget(i18n("Offset"), 0, 0, out, pCore->currentDoc()->timecode(), "", this);
+    int clipIn = parentIn;
+    m_offsetPoint = new PositionWidget(i18n("Offset"), clipIn, 0, clipIn + parentDuration, pCore->currentDoc()->timecode(), "", this);
     lay->addWidget(m_offsetPoint);
 
     // Source range
@@ -372,7 +372,6 @@ void KeyframeImport::updateDestinationRange()
         m_destMin.setEnabled(true);
         m_destMax.setEnabled(true);
         m_limitRange->setEnabled(true);
-        QString tag = m_targetCombo->currentData().toString();
         double min = m_model->data(m_targetCombo->currentData().toModelIndex(), AssetParameterModel::MinRole).toDouble();
         double max = m_model->data(m_targetCombo->currentData().toModelIndex(), AssetParameterModel::MaxRole).toDouble();
         m_destMin.setRange(min, max);
@@ -645,25 +644,27 @@ void KeyframeImport::importSelectedData()
     Fun undo = []() { return true; };
     Fun redo = []() { return true; };
     // Geometry target
-    QPoint rectOffset;
     int finalAlign = m_alignCombo->currentIndex();
-    QLocale locale;
+    QLocale locale; // Import from clipboard – OK to use locale here?
     locale.setNumberOptions(QLocale::OmitGroupSeparator);
-    for (const auto &ix : m_indexes) {
+    for (const auto &ix : qAsConst(m_indexes)) {
         // update keyframes in other indexes
         KeyframeModel *km = kfrModel->getKeyModel(ix);
         qDebug()<<"== "<<ix<<" = "<<m_targetCombo->currentData().toModelIndex();
         if (ix == m_targetCombo->currentData().toModelIndex()) {
-            qDebug()<<"= = = \n\nPROCESSING KF IMPORT LOP: "<<anim->key_count()<<"\n\n===";
             // Import our keyframes
             int frame = 0;
             KeyframeImport::ImportRoles convertMode = static_cast<KeyframeImport::ImportRoles> (m_sourceCombo->currentData().toInt());
+            mlt_keyframe_type type;
             for (int i = 0; i < anim->key_count(); i++) {
-                frame = anim->key_get_frame(i);
+                int error = anim->key_get(i, frame, type);
+                if (error) {
+                    continue;
+                }
                 QVariant current = km->getInterpolatedValue(frame);
                 if (convertMode == ImportRoles::SimpleValue) {
                     double dval = animData->anim_get_double("key", frame);
-                    km->addKeyframe(GenTime(frame - m_inPoint->getPosition() + m_offsetPoint->getPosition(), pCore->getCurrentFps()), (KeyframeType)KdenliveSettings::defaultkeyframeinterp(), dval, true, undo, redo);
+                    km->addKeyframe(GenTime(frame - m_inPoint->getPosition() + m_offsetPoint->getPosition(), pCore->getCurrentFps()), (KeyframeType)type, dval, true, undo, redo);
                     continue;
                 }
                 QStringList kfrData = current.toString().split(QLatin1Char(' '));
@@ -734,15 +735,19 @@ void KeyframeImport::importSelectedData()
                         break;
                 }
                 current = kfrData.join(QLatin1Char(' '));
-                km->addKeyframe(GenTime(frame - m_inPoint->getPosition() + m_offsetPoint->getPosition(), pCore->getCurrentFps()), (KeyframeType)KdenliveSettings::defaultkeyframeinterp(), current, true, undo, redo);
+                km->addKeyframe(GenTime(frame - m_inPoint->getPosition() + m_offsetPoint->getPosition(), pCore->getCurrentFps()), (KeyframeType)type, current, true, undo, redo);
             }
         } else {
             int frame = 0;
+            mlt_keyframe_type type;
             for (int i = 0; i < anim->key_count(); i++) {
-                frame = anim->key_get_frame(i);
+                int error = anim->key_get(i, frame, type);
+                if (error) {
+                    continue;
+                }
                 //frame += (m_inPoint->getPosition() - m_offsetPoint->getPosition());
                 QVariant current = km->getInterpolatedValue(frame);
-                km->addKeyframe(GenTime(frame - m_inPoint->getPosition() + m_offsetPoint->getPosition(), pCore->getCurrentFps()), (KeyframeType)KdenliveSettings::defaultkeyframeinterp(), current, true, undo, redo);
+                km->addKeyframe(GenTime(frame - m_inPoint->getPosition() + m_offsetPoint->getPosition(), pCore->getCurrentFps()), (KeyframeType)type, current, true, undo, redo);
             }
         }
     }

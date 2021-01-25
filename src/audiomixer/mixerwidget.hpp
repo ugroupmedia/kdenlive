@@ -60,14 +60,16 @@ public:
     void clear();
     static void property_changed( mlt_service , MixerWidget *self, char *name );
     void setMute(bool mute);
-    /** @brief Returs true if track is muted
+    /** @brief Returns true if track is muted
      * */
     bool isMute() const;
     /** @brief Uncheck the solo button
      * */
     void unSolo();
-    /** @brief Connect the mixer widgets to the correspondant filters */
+    /** @brief Connect the mixer widgets to the correspondent filters */
     void connectMixer(bool doConnect);
+    /** @brief Disable/enable monitoring by disabling/enabling filter */
+    void pauseMonitoring(bool pause);
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -85,10 +87,11 @@ protected:
     std::shared_ptr<Mlt::Filter> m_levelFilter;
     std::shared_ptr<Mlt::Filter> m_monitorFilter;
     std::shared_ptr<Mlt::Filter> m_balanceFilter;
-    QMap<int, QPair<double, double>> m_levels;
+    QMap<int, QVector<double>> m_levels;
+    int m_channels;
     KDualAction *m_muteAction;
     QSpinBox *m_balanceSpin;
-    QDial *m_balanceDial;
+    QSlider *m_balanceSlider;
     QDoubleSpinBox *m_volumeSpin;
     int m_maxLevels;
 
@@ -101,6 +104,7 @@ private:
     QLabel *m_trackLabel;
     QMutex m_storeMutex;
     int m_lastVolume;
+    QVector <double>m_audioData;
     Mlt::Event *m_listener;
     bool m_recording;
     /** @Update track label to reflect state */

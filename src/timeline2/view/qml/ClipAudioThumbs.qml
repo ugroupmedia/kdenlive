@@ -6,7 +6,7 @@ import com.enums 1.0
 
 Row {
     id: waveform
-    opacity: clipStatus == ClipState.Disabled ? 0.2 : 1
+    opacity: clipState == ClipState.Disabled ? 0.2 : 1
     property int maxWidth: 500 + 100 * timeline.scaleFactor
     anchors.fill: parent
 
@@ -16,7 +16,10 @@ Row {
         onTriggered: processReload()
     }
 
-    function reload() {
+    function reload(reset) {
+        if (reset == 0) {
+            waveformRepeater.model = 0
+        }
         waveTimer.start()
     }
     onMaxWidthChanged: {
@@ -42,12 +45,17 @@ Row {
             height: waveform.height
             channels: clipRoot.audioChannels
             binId: clipRoot.binId
+            audioStream: clipRoot.audioStream
             isFirstChunk: index == 0
-            showItem: waveform.visible && (index * waveform.maxWidth < clipRoot.scrollStart + scrollView.viewport.width) && (index * waveform.maxWidth + width > clipRoot.scrollStart)
+            showItem: waveform.visible && (index * waveform.maxWidth < (clipRoot.scrollStart + scrollView.width)) && ((index * waveform.maxWidth + width) > clipRoot.scrollStart)
             format: timeline.audioThumbFormat
-            waveInPoint: clipRoot.speed < 0 ? (Math.round(clipRoot.outPoint - (index * waveform.maxWidth / clipRoot.timeScale) * Math.abs(clipRoot.speed)) * channels) : (Math.round(clipRoot.inPoint + (index * waveform.maxWidth / clipRoot.timeScale) * clipRoot.speed) * channels)
+            normalize: timeline.audioThumbNormalize
+            drawInPoint: Math.max(0, clipRoot.scrollStart - (index * waveform.maxWidth))
+            drawOutPoint: (clipRoot.scrollStart + scrollView.width - (index * waveform.maxWidth))
+            waveInPoint: clipRoot.speed < 0 ? (Math.round((clipRoot.maxDuration - 1 - clipRoot.inPoint) * Math.abs(clipRoot.speed)  - (index * waveform.maxWidth / clipRoot.timeScale) * Math.abs(clipRoot.speed)) * channels) : (Math.round((clipRoot.inPoint + (index * waveform.maxWidth / clipRoot.timeScale)) * clipRoot.speed) * channels)
             waveOutPoint: clipRoot.speed < 0 ? (waveInPoint - Math.ceil(width / clipRoot.timeScale * Math.abs(clipRoot.speed)) * channels) : (waveInPoint + Math.round(width / clipRoot.timeScale * clipRoot.speed) * channels)
-            fillColor: activePalette.text
+            fillColor1: root.thumbColor1
+            fillColor2: root.thumbColor2
         }
     }
 }

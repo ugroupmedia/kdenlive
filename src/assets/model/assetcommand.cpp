@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2017 by by Jean-Baptiste Mardelle                                  *
+ *   Copyright (C) 2017 by Jean-Baptiste Mardelle                          *
  *   This file is part of Kdenlive. See www.kdenlive.org.                  *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -33,8 +33,6 @@ AssetCommand::AssetCommand(const std::shared_ptr<AssetParameterModel> &model, co
     , m_updateView(false)
     , m_stamp(QTime::currentTime())
 {
-    QLocale locale;
-    locale.setNumberOptions(QLocale::OmitGroupSeparator);
     m_name = m_model->data(index, AssetParameterModel::NameRole).toString();
     const QString id = model->getAssetId();
     if (EffectsRepository::get()->exists(id)) {
@@ -43,26 +41,25 @@ AssetCommand::AssetCommand(const std::shared_ptr<AssetParameterModel> &model, co
         setText(i18n("Edit %1", TransitionsRepository::get()->getName(id)));
     }
     QVariant previousVal = m_model->data(index, AssetParameterModel::ValueRole);
-    m_oldValue = previousVal.type() == QVariant::Double ? locale.toString(previousVal.toDouble()) : previousVal.toString();
+    m_oldValue = previousVal.type() == previousVal.toString();
 }
 
 void AssetCommand::undo()
 {
     m_model->setParameter(m_name, m_oldValue, true, m_index);
 }
-// virtual
+
 void AssetCommand::redo()
 {
     m_model->setParameter(m_name, m_value, m_updateView, m_index);
     m_updateView = true;
 }
 
-// virtual
 int AssetCommand::id() const
 {
     return 1;
 }
-// virtual
+
 bool AssetCommand::mergeWith(const QUndoCommand *other)
 {
     if (other->id() != id() || static_cast<const AssetCommand *>(other)->m_index != m_index ||
@@ -82,8 +79,6 @@ AssetMultiCommand::AssetMultiCommand(const std::shared_ptr<AssetParameterModel> 
     , m_updateView(false)
     , m_stamp(QTime::currentTime())
 {
-    QLocale locale;
-    locale.setNumberOptions(QLocale::OmitGroupSeparator);
     qDebug()<<"CREATING MULTIPLE COMMAND!!!\nVALUES: "<<m_values;
     m_name = m_model->data(indexes.first(), AssetParameterModel::NameRole).toString();
     const QString id = model->getAssetId();
@@ -92,9 +87,9 @@ AssetMultiCommand::AssetMultiCommand(const std::shared_ptr<AssetParameterModel> 
     } else if (TransitionsRepository::get()->exists(id)) {
         setText(i18n("Edit %1", TransitionsRepository::get()->getName(id)));
     }
-    for (QModelIndex ix : m_indexes) {
+    for (QModelIndex ix : qAsConst(m_indexes)) {
         QVariant previousVal = m_model->data(ix, AssetParameterModel::ValueRole);
-        m_oldValues << (previousVal.type() == QVariant::Double ? locale.toString(previousVal.toDouble()) : previousVal.toString());
+        m_oldValues << previousVal.toString();
     }
 }
 
@@ -102,7 +97,7 @@ void AssetMultiCommand::undo()
 {
     int indx = 0;
     int max = m_indexes.size() - 1;
-    for (const QModelIndex &ix : m_indexes) {
+    for (const QModelIndex &ix : qAsConst(m_indexes)) {
         m_model->setParameter(m_model->data(ix, AssetParameterModel::NameRole).toString(), m_oldValues.at(indx), indx == max, ix);
         indx++;
     }
@@ -112,7 +107,7 @@ void AssetMultiCommand::redo()
 {
     int indx = 0;
     int max = m_indexes.size() - 1;
-    for (const QModelIndex &ix : m_indexes) {
+    for (const QModelIndex &ix : qAsConst(m_indexes)) {
         m_model->setParameter(m_model->data(ix, AssetParameterModel::NameRole).toString(), m_values.at(indx), m_updateView && indx == max, ix);
         indx++;
     }

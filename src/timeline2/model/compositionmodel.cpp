@@ -23,22 +23,21 @@
 #include "timelinemodel.hpp"
 #include "trackmodel.hpp"
 #include "transitions/transitionsrepository.hpp"
-#include "undohelper.hpp"
 #include <QDebug>
 #include <mlt++/MltTransition.h>
 #include <utility>
 
 CompositionModel::CompositionModel(std::weak_ptr<TimelineModel> parent, std::unique_ptr<Mlt::Transition> transition, int id, const QDomElement &transitionXml,
-                                   const QString &transitionId)
+                                   const QString &transitionId, const QString &originalDecimalPoint)
     : MoveableItem<Mlt::Transition>(std::move(parent), id)
-    , AssetParameterModel(std::move(transition), transitionXml, transitionId, {ObjectType::TimelineComposition, m_id})
+    , AssetParameterModel(std::move(transition), transitionXml, transitionId, {ObjectType::TimelineComposition, m_id}, originalDecimalPoint)
     , m_a_track(-1)
     , m_duration(0)
 {
     m_compositionName = TransitionsRepository::get()->getName(transitionId);
 }
 
-int CompositionModel::construct(const std::weak_ptr<TimelineModel> &parent, const QString &transitionId, int id,
+int CompositionModel::construct(const std::weak_ptr<TimelineModel> &parent, const QString &transitionId, const QString &originalDecimalPoint, int id,
                                 std::unique_ptr<Mlt::Properties> sourceProperties)
 {
     std::unique_ptr<Mlt::Transition> transition = TransitionsRepository::get()->getTransition(transitionId);
@@ -64,7 +63,7 @@ int CompositionModel::construct(const std::weak_ptr<TimelineModel> &parent, cons
             transition->set("force_track", sourceProperties->get_int("force_track"));
         }
     }
-    std::shared_ptr<CompositionModel> composition(new CompositionModel(parent, std::move(transition), id, xml, transitionId));
+    std::shared_ptr<CompositionModel> composition(new CompositionModel(parent, std::move(transition), id, xml, transitionId, originalDecimalPoint));
     id = composition->m_id;
 
     if (auto ptr = parent.lock()) {
@@ -77,8 +76,9 @@ int CompositionModel::construct(const std::weak_ptr<TimelineModel> &parent, cons
     return id;
 }
 
-bool CompositionModel::requestResize(int size, bool right, Fun &undo, Fun &redo, bool logUndo)
+bool CompositionModel::requestResize(int size, bool right, Fun &undo, Fun &redo, bool logUndo, bool hasMix)
 {
+    Q_UNUSED(hasMix);
     QWriteLocker locker(&m_lock);
     if (size <= 0) {
         return false;
@@ -153,18 +153,20 @@ bool CompositionModel::requestResize(int size, bool right, Fun &undo, Fun &redo,
             return false;
         };
 
-        auto kfr = getKeyframeModel();
-        if (kfr) {
-            // Adjust keyframe length
-            if (oldDuration > 0) {
-                kfr->resizeKeyframes(0, oldDuration, 0, out - in, 0, right, undo, redo);
+        if (logUndo) {
+            auto kfr = getKeyframeModel();
+            if (kfr) {
+                // Adjust keyframe length
+                if (oldDuration > 0) {
+                    kfr->resizeKeyframes(0, oldDuration, 0, out - in, 0, right, undo, redo);
+                }
+                Fun refresh = [kfr]() {
+                    emit kfr->modelChanged();
+                    return true;
+                };
+                refresh();
+                UPDATE_UNDO_REDO(refresh, refresh, undo, redo);
             }
-            Fun refresh = [kfr]() {
-                kfr->modelChanged();
-                return true;
-            };
-            refresh();
-            UPDATE_UNDO_REDO(refresh, refresh, undo, redo);
         }
         UPDATE_UNDO_REDO(operation, reverse, undo, redo);
         return true;
@@ -269,7 +271,7 @@ void CompositionModel::setGrab(bool grab)
     m_grabbed = grab;
     if (auto ptr = m_parent.lock()) {
         QModelIndex ix = ptr->makeCompositionIndexFromID(m_id);
-        ptr->dataChanged(ix, ix, {TimelineModel::GrabbedRole});
+        emit ptr->dataChanged(ix, ix, {TimelineModel::GrabbedRole});
     }
 }
 
@@ -283,7 +285,7 @@ void CompositionModel::setSelected(bool sel)
     if (auto ptr = m_parent.lock()) {
         if (m_currentTrackId != -1) {
             QModelIndex ix = ptr->makeCompositionIndexFromID(m_id);
-            ptr->dataChanged(ix, ix, {TimelineModel::SelectedRole});
+            emit ptr->dataChanged(ix, ix, {TimelineModel::SelectedRole});
         }
     }
 }

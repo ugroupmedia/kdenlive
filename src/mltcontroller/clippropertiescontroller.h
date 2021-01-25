@@ -27,13 +27,37 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <QString>
 #include <QTreeWidget>
+#include <QLabel>
 
 #include <mlt++/Mlt.h>
 
 class ClipController;
 class QMimeData;
 class QTextEdit;
-class QLabel;
+class QComboBox;
+class QListWidget;
+class QGroupBox;
+class QCheckBox;
+class QButtonGroup;
+class QSpinBox;
+
+class ElidedLinkLabel : public QLabel
+{
+    Q_OBJECT
+
+public:
+    explicit ElidedLinkLabel(QWidget *parent = nullptr);
+    void setLabelText(const QString &text, const QString &link);
+    void updateText(int width);
+    int currentWidth() const;
+
+private:
+    QString m_text;
+    QString m_link;
+
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+};
 
 class AnalysisTree : public QTreeWidget
 {
@@ -61,12 +85,16 @@ public:
      */
     explicit ClipPropertiesController(ClipController *controller, QWidget *parent);
     ~ClipPropertiesController() override;
+    void activatePage(int ix);
 
 public slots:
     void slotReloadProperties();
     void slotRefreshTimeCode();
     void slotFillMeta(QTreeWidget *tree);
     void slotFillAnalysisData();
+    void slotDeleteSelectedMarkers();
+    void slotSelectAllMarkers();
+    void updateStreamInfo(int streamIndex);
 
 private slots:
     void slotColorModified(const QColor &newcolor);
@@ -91,7 +119,7 @@ private slots:
 private:
     ClipController *m_controller;
     QTabWidget *m_tabWidget;
-    QLabel *m_clipLabel;
+    ElidedLinkLabel *m_clipLabel;
     Timecode m_tc;
     QString m_id;
     ClipType::ProducerType m_type;
@@ -107,10 +135,23 @@ private:
     QWidget *m_markersPage;
     QWidget *m_metaPage;
     QWidget *m_analysisPage;
+    QComboBox *m_audioStream;
     QTreeView *m_markerTree;
     AnalysisTree *m_analysisTree;
     QTextEdit *m_textEdit;
+    QListWidget *m_audioStreamsView;
+    QGroupBox *m_audioEffectGroup;
+    QCheckBox *m_swapChannels;
+    QCheckBox *m_normalize;
+    QButtonGroup *m_copyChannelGroup;
+    QCheckBox *m_copyChannel1;
+    QCheckBox *m_copyChannel2;
+    QSpinBox *m_gain;
+    /** @brief The selected audio stream. */
+    int m_activeAudioStreams;
     void fillProperties();
+    /** @brief Add/remove icon beside audio stream to indicate effects. */
+    void updateStreamIcon(int row, int streamIndex);
 
 signals:
     void updateClipProperties(const QString &, const QMap<QString, QString> &, const QMap<QString, QString> &);

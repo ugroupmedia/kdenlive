@@ -73,6 +73,9 @@ public:
      */
     void enableStack(bool enable);
     bool isStackEnabled() const;
+    /** @brief Collaps / expand current effect
+     */
+    void switchCollapsed();
 
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
@@ -88,6 +91,7 @@ private:
     std::vector<CollapsibleEffectView *> m_widgets;
     AssetIconProvider *m_thumbnailer;
     QTimer m_scrollTimer;
+    QTimer m_timerHeight;
 
     /** @brief the frame size of the original clip this effect is applied on
      */
@@ -101,17 +105,26 @@ private slots:
     void slotActivateEffect(const std::shared_ptr<EffectItemModel> &effectModel);
     void loadEffects();
     void updateTreeHeight();
+    void doActivateEffect(int row, QModelIndex ix, bool force = false);
+    void slotFocusEffect();
+    /** @brief Save current effect stack
+     */
+    void slotSaveStack();
+    /** @brief Refresh the enabled state on widgets
+     */
+    void changeEnabledState();
 
     //    void switchBuiltStack(bool show);
 
 signals:
-    void doActivateEffect(QModelIndex);
+    void switchCollapsedView(int row);
     void seekToPos(int);
     void reloadEffect(const QString &path);
     void updateEnabledState();
     void removeCurrentEffect();
     void blockWheenEvent(bool block);
     void checkScrollBar();
+    void scrollView(QRect);
 };
 
 #endif

@@ -22,7 +22,6 @@
 
 #include "monitor.h"
 
-#include "timecode.h"
 #include <QDir>
 #include <QMutex>
 #include <QTimer>
@@ -44,7 +43,7 @@ public:
     void appendMonitor(AbstractMonitor *monitor);
     void removeMonitor(AbstractMonitor *monitor);
     Timecode timecode() const;
-    void resetProfiles(const Timecode &tc);
+    void resetProfiles();
     /** @brief delete and rebuild consumer, for example when external display is switched */
     void resetConsumers(bool fullReset);
     void stopActiveMonitor();
@@ -54,6 +53,7 @@ public:
     @return nullptr, if no monitor could be found, or the monitor otherwise.
     */
     AbstractMonitor *monitor(Kdenlive::MonitorId monitorName);
+    bool isActive(Kdenlive::MonitorId id) const;
     void updateScopeSource();
     void clearScopeSource();
     /** @brief Change an MLT consumer property for both monitors. */
@@ -71,13 +71,13 @@ public:
     /** @brief Returns true if the project monitor is visible (and not tabbed under another dock. */
     bool projectMonitorVisible() const;
     QTimer refreshTimer;
+    static const double speedArray[5];
 
 public slots:
 
     /** @brief Activates a monitor.
      * @param name name of the monitor to activate */
     bool activateMonitor(Kdenlive::MonitorId);
-    bool isActive(Kdenlive::MonitorId id) const;
     void slotPlay();
     void slotPause();
     void slotPlayZone();
@@ -97,7 +97,7 @@ public slots:
     void focusProjectMonitor();
     void refreshProjectMonitor();
     /** @brief Refresh project monitor if the timeline cursor is inside the range. */
-    void refreshProjectRange(QSize range);
+    void refreshProjectRange(QPair<int, int>range);
     void refreshClipMonitor();
 
     /** @brief Switch current monitor to fullscreen. */
@@ -137,7 +137,6 @@ private:
     void setupActions();
     Monitor *m_clipMonitor{nullptr};
     Monitor *m_projectMonitor{nullptr};
-    Timecode m_timecode;
     AbstractMonitor *m_activeMonitor{nullptr};
     QList<AbstractMonitor *> m_monitorsList;
     KDualAction *m_muteAction;
@@ -157,6 +156,10 @@ signals:
     void frameDisplayed(const SharedFrame &);
     /** @brief Triggered when the project monitor is paused (used to reset stored audiomixer data */
     void cleanMixer();
+    /** @brief Update monitor preview resolution */
+    void updatePreviewScaling();
+    /** @brief monitor scaling was changed, update select action */
+    void scalingChanged();
 };
 
 #endif

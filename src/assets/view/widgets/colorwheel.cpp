@@ -25,6 +25,7 @@
 #include <QVBoxLayout>
 #include <QDoubleSpinBox>
 #include <QLabel>
+#include <QDebug>
 #include <QFontDatabase>
 
 #include <qmath.h>
@@ -198,9 +199,11 @@ NegQColor WheelContainer::colorForPoint(const QPointF &point)
     }
     if (m_isInSquare) {
         qreal value = 1.0 - qreal(point.y() - m_margin) / (wheelSize() - m_margin * 2);
+        qDebug()<<"== CLICK VALIE: "<<value;
         if (!qFuzzyCompare(m_zeroShift, 0.)) {
             value = value - m_zeroShift;
         }
+        qDebug()<<"== CLICK VALIE AFTER SHIFT: "<<value<<", SIZE F: "<<m_sizeFactor;
         return NegQColor::fromHsvF(m_color.hueF(), m_color.saturationF(), value);
     }
     return {};
@@ -218,7 +221,11 @@ QSize WheelContainer::minimumSizeHint() const
 
 void WheelContainer::wheelEvent(QWheelEvent *event)
 {
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     if (m_sliderRegion.contains(event->pos())) {
+# else
+    if (m_sliderRegion.contains(event->position().toPoint())) {
+#endif
         double y = m_color.valueF();
         if (event->modifiers() & Qt::ShiftModifier) {
             y += event->angleDelta().y() > 0 ? 0.002 : -0.002;
@@ -519,7 +526,7 @@ ColorWheel::ColorWheel(QString id, QString name, NegQColor color, QWidget *paren
     hb->setContentsMargins(0, 0, 0, 0);
     lay->addLayout(hb);
     m_container->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
-    connect(m_container, &WheelContainer::colorChange, [&] (const NegQColor &col) {
+    connect(m_container, &WheelContainer::colorChange, this, [&] (const NegQColor &col) {
         QList <double> vals = m_container->getNiceParamValues();
         m_redEdit->blockSignals(true);
         m_greenEdit->blockSignals(true);
@@ -532,13 +539,13 @@ ColorWheel::ColorWheel(QString id, QString name, NegQColor color, QWidget *paren
         m_blueEdit->blockSignals(false);
         emit colorChange(col);
     });
-    connect(m_redEdit, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), [&]() {
+    connect(m_redEdit, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), this, [&]() {
         m_container->setRedColor(m_redEdit->value());
     });
-    connect(m_greenEdit, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), [&]() {
+    connect(m_greenEdit, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), this, [&]() {
         m_container->setGreenColor(m_greenEdit->value());
     });
-    connect(m_blueEdit, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), [&]() {
+    connect(m_blueEdit, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), this, [&]() {
         m_container->setBlueColor(m_blueEdit->value());
     });
     setMinimumHeight(m_wheelName->height() + m_container->minimumHeight() + m_redEdit->height());
@@ -555,7 +562,6 @@ NegQColor ColorWheel::color() const
 void ColorWheel::setColor(QList<double> values)
 {
     m_container->setColor(values);
-    QList <double> vals = m_container->getNiceParamValues();
     m_redEdit->blockSignals(true);
     m_greenEdit->blockSignals(true);
     m_blueEdit->blockSignals(true);

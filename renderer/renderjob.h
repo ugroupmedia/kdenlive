@@ -23,7 +23,7 @@
 #include <QDBusInterface>
 #include <QObject>
 #include <QProcess>
-#include <QTime>
+#include <QDateTime>
 #include <QFile>
 // Testing
 #include <QTextStream>
@@ -35,7 +35,6 @@ class RenderJob : public QObject
 public:
     RenderJob(const QString &render, const QString &scenelist, const QString &target, int pid = -1, int in = -1, int out = -1, QObject *parent = nullptr);
     ~RenderJob();
-    void setLocale(const QString &locale);
 
 public slots:
     void start();
@@ -61,13 +60,15 @@ private:
     bool m_erase;
     int m_seconds;
     int m_frame;
+    int m_framein;
+    int m_frameout;
     /** @brief The process id of the Kdenlive instance, used to get the dbus service. */
     int m_pid;
     bool m_dualpass;
     QProcess *m_renderProcess;
     QString m_errorMessage;
     QList<QVariant> m_dbusargs;
-    QTime m_startTime;
+    QDateTime m_startTime;
     QStringList m_args;
     /** @brief Used to write to the log file. */
     QTextStream m_logstream;

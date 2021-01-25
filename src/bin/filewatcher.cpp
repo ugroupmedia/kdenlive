@@ -40,11 +40,6 @@ void FileWatcher::addFile(const QString &binId, const QString &url)
     if (url.isEmpty()) {
         return;
     }
-    QFileInfo check_file(url);
-    // check if file exists and if yes: Is it really a file and no directory?
-    if (!check_file.exists() || !check_file.isFile()) {
-        return;
-    }
     if (m_occurences.count(url) == 0) {
         m_fileWatcher->addFile(url);
     }
@@ -97,7 +92,7 @@ void FileWatcher::slotProcessModifiedUrls()
 {
     auto checkList = m_modifiedUrls;
     for (const QString &path : checkList) {
-        if (m_fileWatcher->ctime(path).msecsTo(QDateTime::currentDateTime()) > 1000) {
+        if (m_fileWatcher->ctime(path).msecsTo(QDateTime::currentDateTime()) > 2000) {
             for (const QString &id : m_occurences[path]) {
                 emit binClipModified(id);
             }

@@ -36,7 +36,7 @@ PositionEditWidget::PositionEditWidget(std::shared_ptr<AssetParameterModel> mode
     m_slider = new QSlider(Qt::Horizontal, this);
     m_slider->setSizePolicy(QSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Preferred));
 
-    m_display = new TimecodeDisplay(pCore->monitorManager()->timecode(), this);
+    m_display = new TimecodeDisplay(pCore->timecode(), this);
     m_display->setSizePolicy(QSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred));
 
     layout->addWidget(label);
@@ -51,7 +51,7 @@ PositionEditWidget::PositionEditWidget(std::shared_ptr<AssetParameterModel> mode
     connect(m_slider, &QAbstractSlider::valueChanged, this, &PositionEditWidget::valueChanged);
 
     // emit the signal of the base class when appropriate
-    connect(this->m_slider, &QAbstractSlider::valueChanged, [this](int val) {
+    connect(this->m_slider, &QAbstractSlider::valueChanged, this, [this](int val) {
         if (m_inverted) {
             val = m_model->data(m_index, AssetParameterModel::ParentInRole).toInt() + m_model->data(m_index, AssetParameterModel::ParentDurationRole).toInt() - 1 -
                   val;
@@ -91,6 +91,7 @@ void PositionEditWidget::slotUpdatePosition()
 
 void PositionEditWidget::slotRefresh()
 {
+    const QSignalBlocker bk(m_slider);
     int min = m_model->data(m_index, AssetParameterModel::ParentInRole).toInt();
     int max = min + m_model->data(m_index, AssetParameterModel::ParentDurationRole).toInt();
     const QSignalBlocker blocker(m_slider);

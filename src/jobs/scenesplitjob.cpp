@@ -38,7 +38,7 @@
 #include <mlt++/Mlt.h>
 
 SceneSplitJob::SceneSplitJob(const QString &binId, bool subClips, int markersType, int minInterval)
-    : MeltJob(binId, STABILIZEJOB, true, -1, -1)
+    : MeltJob(binId, {ObjectType::BinClip, binId.toInt()}, STABILIZEJOB, true, -1, -1)
     , m_subClips(subClips)
     , m_markersType(markersType)
     , m_minInterval(minInterval)
@@ -54,7 +54,7 @@ void SceneSplitJob::configureConsumer()
     m_consumer = std::make_unique<Mlt::Consumer>(*m_profile.get(), "null");
     m_consumer->set("all", 1);
     m_consumer->set("terminate_on_pause", 1);
-    m_consumer->set("real_time", -KdenliveSettings::mltthreads());
+    m_consumer->set("real_time", -1);
     // We just want to find scene change, set all methods to the fastests
     m_consumer->set("rescale", "nearest");
     m_consumer->set("deinterlace_method", "onefield");
@@ -63,7 +63,6 @@ void SceneSplitJob::configureConsumer()
 
 void SceneSplitJob::configureFilter()
 {
-
     m_filter = std::make_unique<Mlt::Filter>(*m_profile.get(), "motion_est");
     if ((m_filter == nullptr) || !m_filter->is_valid()) {
         m_errorMessage.append(i18n("Cannot create filter motion_est. Cannot split scenes"));
@@ -72,6 +71,7 @@ void SceneSplitJob::configureFilter()
 
     m_filter->set("shot_change_list", 0);
     m_filter->set("denoise", 0);
+    m_filter->set_in_and_out(0, length - 1);
 }
 
 void SceneSplitJob::configureProfile()
@@ -102,7 +102,7 @@ int SceneSplitJob::prepareJob(const std::shared_ptr<JobManager> &ptr, const std:
     bool subclips = ui.cut_scenes->isChecked();
     int minInterval = ui.minDuration->value();
 
-    return ptr->startJob_noprepare<SceneSplitJob>(binIds, parentId, std::move(undoString), subclips, markersType, minInterval);
+    return emit ptr->startJob_noprepare<SceneSplitJob>(binIds, parentId, std::move(undoString), subclips, markersType, minInterval);
 }
 
 bool SceneSplitJob::commitResult(Fun &undo, Fun &redo)
@@ -131,7 +131,7 @@ bool SceneSplitJob::commitResult(Fun &undo, Fun &redo)
         QJsonArray list;
         int ix = 1;
         int lastCut = 0;
-        for (const QString &marker : markerData) {
+        for (const QString &marker : qAsConst(markerData)) {
             int pos = marker.section(QLatin1Char('='), 0, 0).toInt();
             if (m_minInterval > 0 && ix > 1 && pos - lastCut < m_minInterval) {
                 continue;
@@ -151,10 +151,9 @@ bool SceneSplitJob::commitResult(Fun &undo, Fun &redo)
         // Create zones
         int ix = 1;
         int lastCut = 0;
-        QMap<QString, QString> zoneData;
         QJsonArray list;
-        QJsonDocument json(list);
-        for (const QString &marker : markerData) {
+        QJsonDocument json;
+        for (const QString &marker : qAsConst(markerData)) {
             int pos = marker.section(QLatin1Char('='), 0, 0).toInt();
             if (pos <= lastCut + 1 || pos - lastCut < m_minInterval) {
                 continue;
@@ -167,8 +166,10 @@ bool SceneSplitJob::commitResult(Fun &undo, Fun &redo)
             lastCut = pos;
             ix++;
         }
+        json.setArray(list);
+        QString dataMap(json.toJson());
         if (!json.isEmpty()) {
-            pCore->projectItemModel()->loadSubClips(m_clipId, QString(json.toJson()), undo, redo);
+            pCore->projectItemModel()->loadSubClips(m_clipId, dataMap, undo, redo);
         }
     }
     qDebug() << "RESULT of the SCENESPLIT filter:" << result;

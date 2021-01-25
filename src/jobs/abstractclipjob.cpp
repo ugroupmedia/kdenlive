@@ -22,11 +22,19 @@
 #include "doc/kdenlivedoc.h"
 #include "kdenlivesettings.h"
 
-AbstractClipJob::AbstractClipJob(JOBTYPE type, QString id, QObject *parent)
+AbstractClipJob::AbstractClipJob(JOBTYPE type, QString id, const ObjectId &owner, QObject *parent)
     : QObject(parent)
     , m_clipId(std::move(id))
     , m_jobType(type)
+    , m_inPoint(-1)
+    , m_outPoint(-1)
+    , m_owner(owner)
 {
+    if (m_clipId.count(QStringLiteral("/")) == 2) {
+        m_inPoint = m_clipId.section(QLatin1Char('/'), 1, 1).toInt();
+        m_outPoint = m_clipId.section(QLatin1Char('/'), 2).toInt();
+        m_clipId = m_clipId.section(QLatin1Char('/'), 0, 0);
+    }
 }
 
 AbstractClipJob::~AbstractClipJob() = default;
@@ -56,3 +64,9 @@ AbstractClipJob::JOBTYPE AbstractClipJob::jobType() const
 {
     return m_jobType;
 }
+
+const ObjectId AbstractClipJob::owner()
+{
+    return m_owner;
+}
+

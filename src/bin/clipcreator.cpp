@@ -29,6 +29,7 @@
 #include "mainwindow.h"
 #include "projectitemmodel.h"
 #include "titler/titledocument.h"
+#include "dialogs/clipcreationdialog.h"
 #include "utils/devices.hpp"
 #include "xml/xml.hpp"
 #include <KMessageBox>
@@ -87,12 +88,19 @@ QString ClipCreator::createColorClip(const QString &color, int duration, const Q
 QDomDocument ClipCreator::getXmlFromUrl(const QString &path)
 {
     QDomDocument xml;
+    QUrl fileUrl = QUrl::fromLocalFile(path);
+    if (fileUrl.matches(pCore->currentDoc()->url(), QUrl::RemoveScheme | QUrl::NormalizePathSegments)) {
+        // Cannot embed a project in itself
+        KMessageBox::sorry(QApplication::activeWindow(), i18n("You cannot add a project inside itself."), i18n("Cannot create clip"));        
+        return xml;
+    }
     QMimeDatabase db;
-    QMimeType type = db.mimeTypeForUrl(QUrl::fromLocalFile(path));
+    QMimeType type = db.mimeTypeForUrl(fileUrl);
 
     QDomElement prod;
+    qDebug()<<"=== GOT DROPPED MIME: "<<type.name();
     if (type.name().startsWith(QLatin1String("image/"))) {
-        int duration = pCore->currentDoc()->getFramePos(KdenliveSettings::image_duration());
+        int duration = pCore->getDurationFromString(KdenliveSettings::image_duration());
         prod = createProducer(xml, ClipType::Image, path, QString(), duration, QString());
     } else if (type.inherits(QStringLiteral("application/x-kdenlivetitle"))) {
         // opening a title file
@@ -137,7 +145,7 @@ QDomDocument ClipCreator::getXmlFromUrl(const QString &path)
 QString ClipCreator::createClipFromFile(const QString &path, const QString &parentFolder, const std::shared_ptr<ProjectItemModel> &model, Fun &undo, Fun &redo,
                                         const std::function<void(const QString &)> &readyCallBack)
 {
-    qDebug() << "/////////// createClipFromFile" << path << parentFolder << path;
+    qDebug() << "/////////// createClipFromFile" << path << parentFolder;
     QDomDocument xml = getXmlFromUrl(path);
     if (xml.isNull()) {
         return QStringLiteral("-1");
@@ -194,7 +202,7 @@ QString ClipCreator::createTitleTemplate(const QString &path, const QString &tex
 
     // Duration not found, we fall-back to defaults
     if (duration == 0) {
-        duration = pCore->currentDoc()->getFramePos(KdenliveSettings::title_duration());
+        duration = pCore->getDurationFromString(KdenliveSettings::title_duration());
     }
     auto prod = createProducer(xml, ClipType::TextTemplate, path, name, duration, QString());
     if (!text.isEmpty()) {
@@ -228,49 +236,36 @@ const QString ClipCreator::createClipsFromList(const QList<QUrl> &list, bool che
         if (!QFile::exists(file.toLocalFile())) {
             continue;
         }
-        QMimeType mType = db.mimeTypeForUrl(file);
-        if (mType.inherits(QLatin1String("inode/directory"))) {
+        QFileInfo info(file.toLocalFile());
+        if (info.isDir()) {
             // user dropped a folder, import its files
-            QDir dir(file.path());
+            QDir dir(file.toLocalFile());
             QString folderId;
             Fun local_undo = []() { return true; };
             Fun local_redo = []() { return true; };
-            bool folderCreated = pCore->projectItemModel()->requestAddFolder(folderId, dir.dirName(), parentFolder, local_undo, local_redo);
-            if (!folderCreated) {
-                continue;
-            }
-            createdItem = folderId;
-            QStringList result = dir.entryList(QDir::Files);
             QStringList subfolders = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+            dir.setNameFilters(ClipCreationDialog::getExtensions());
+            QStringList result = dir.entryList(QDir::Files);
             QList<QUrl> folderFiles;
-            for (const QString &path : result) {
+            for (const QString &path : qAsConst(result)) {
                 QUrl url = QUrl::fromLocalFile(dir.absoluteFilePath(path));
-                // Check file is of a supported type
-                mType = db.mimeTypeForUrl(url);
-                QString mimeAliases = mType.name();
-                bool isValid = mimeAliases.contains(QLatin1String("video/"));
-                if (!isValid) {
-                    isValid = mimeAliases.contains(QLatin1String("audio/"));
-                }
-                if (!isValid) {
-                    isValid = mimeAliases.contains(QLatin1String("image/"));
-                }
-                if (!isValid && (mType.inherits(QLatin1String("video/mlt-playlist")) || mType.inherits(QLatin1String("application/x-kdenlivetitle")))) {
-                    isValid = true;
-                }
-                if (isValid) {
-                    folderFiles.append(url);
-                }
+                folderFiles.append(url);
             }
             if (folderFiles.isEmpty()) {
                 QList<QUrl> sublist;
-                for (const QString &sub : subfolders) {
+                for (const QString &sub : qAsConst(subfolders)) {
                     QUrl url = QUrl::fromLocalFile(dir.absoluteFilePath(sub));
                     if (!list.contains(url)) {
                         sublist << url;
                     }
                 }
                 if (!sublist.isEmpty()) {
+                    // Create main folder
+                    bool folderCreated = pCore->projectItemModel()->requestAddFolder(folderId, dir.dirName(), parentFolder, local_undo, local_redo);
+                    if (!folderCreated) {
+                        continue;
+                    }
+                    createdItem = folderId;
                     // load subfolders
                     const QString clipId = createClipsFromList(sublist, checkRemovable, folderId, model, undo, redo, false);
                     if (createdItem.isEmpty() && clipId != QLatin1String("-1")) {
@@ -278,6 +273,12 @@ const QString ClipCreator::createClipsFromList(const QList<QUrl> &list, bool che
                     }
                 }
             } else {
+                // Create main folder
+                bool folderCreated = pCore->projectItemModel()->requestAddFolder(folderId, dir.dirName(), parentFolder, local_undo, local_redo);
+                if (!folderCreated) {
+                    continue;
+                }
+                createdItem = folderId;
                 const QString clipId = createClipsFromList(folderFiles, checkRemovable, folderId, model, local_undo, local_redo, false);
                 if (clipId.isEmpty() || clipId == QLatin1String("-1")) {
                     local_undo();
@@ -289,7 +290,7 @@ const QString ClipCreator::createClipsFromList(const QList<QUrl> &list, bool che
                 }
                 // Check subfolders
                 QList<QUrl> sublist;
-                for (const QString &sub : subfolders) {
+                for (const QString &sub : qAsConst(subfolders)) {
                     QUrl url = QUrl::fromLocalFile(dir.absoluteFilePath(sub));
                     if (!list.contains(url)) {
                         sublist << url;
@@ -305,7 +306,7 @@ const QString ClipCreator::createClipsFromList(const QList<QUrl> &list, bool che
             if (checkRemovable && isOnRemovableDevice(file) && !isOnRemovableDevice(pCore->currentDoc()->projectDataFolder())) {
                 int answer = KMessageBox::warningContinueCancel(
                     QApplication::activeWindow(),
-                    i18n("Clip <b>%1</b><br /> is on a removable device, will not be available when device is unplugged or mounted at a different position. You "
+                    i18n("Clip <b>%1</b><br /> is on a removable device, will not be available when device is unplugged or mounted at a different position.\nYou "
                          "may want to copy it first to your hard-drive. Would you like to add it anyways?",
                          file.path()),
                     i18n("Removable device"), KStandardGuiItem::cont(), KStandardGuiItem::cancel(), QStringLiteral("confirm_removable_device"));
