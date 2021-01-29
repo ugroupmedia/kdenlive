@@ -1030,15 +1030,6 @@ Bin::Bin(std::shared_ptr<ProjectItemModel> model, QWidget *parent)
     connect(disableEffects, &QAction::triggered, this, [this](bool disable) { this->setBinEffectsEnabled(!disable); });
     disableEffects->setIcon(QIcon::fromTheme(QStringLiteral("favorite")));
 
-    QAction *hoverPreview = new QAction(i18n("Show video preview in thumbnails"), this);
-    hoverPreview->setCheckable(true);
-    hoverPreview->setChecked(KdenliveSettings::hoverPreview());
-    connect(hoverPreview, &QAction::triggered, [] (bool checked) {
-        KdenliveSettings::setHoverPreview(checked);
-    });
-    connect(disableEffects, &QAction::triggered, this, [this](bool disable) { this->setBinEffectsEnabled(!disable); });
-    disableEffects->setIcon(QIcon::fromTheme(QStringLiteral("favorite")));
-
     listType->setToolBarMode(KSelectAction::MenuMode);
     connect(listType, static_cast<void (KSelectAction::*)(QAction *)>(&KSelectAction::triggered), this, &Bin::slotInitView);
 
