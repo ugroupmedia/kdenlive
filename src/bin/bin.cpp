@@ -1030,6 +1030,15 @@ Bin::Bin(std::shared_ptr<ProjectItemModel> model, QWidget *parent)
     connect(disableEffects, &QAction::triggered, this, [this](bool disable) { this->setBinEffectsEnabled(!disable); });
     disableEffects->setIcon(QIcon::fromTheme(QStringLiteral("favorite")));
 
+    QAction *hoverPreview = new QAction(i18n("Show video preview in thumbnails"), this);
+    hoverPreview->setCheckable(true);
+    hoverPreview->setChecked(KdenliveSettings::hoverPreview());
+    connect(hoverPreview, &QAction::triggered, [] (bool checked) {
+        KdenliveSettings::setHoverPreview(checked);
+    });
+    connect(disableEffects, &QAction::triggered, this, [this](bool disable) { this->setBinEffectsEnabled(!disable); });
+    disableEffects->setIcon(QIcon::fromTheme(QStringLiteral("favorite")));
+
     listType->setToolBarMode(KSelectAction::MenuMode);
     connect(listType, static_cast<void (KSelectAction::*)(QAction *)>(&KSelectAction::triggered), this, &Bin::slotInitView);
 
@@ -3463,7 +3472,7 @@ void Bin::renameSubClip(const QString &id, const QString &newName, int in, int o
     if (!sub) {
         return;
     }
-    sub->setName(newName);
+    sub->setName(newName.isEmpty() ? i18n("Unnamed") : newName);
     clip->updateZones();
     emit itemUpdated(sub);
 }
@@ -4042,7 +4051,9 @@ void Bin::reloadAllProducers(bool reloadThumbs)
         }
         if (clip->isValid()) {
             clip->resetProducerProperty(QStringLiteral("kdenlive:duration"));
-            clip->resetProducerProperty(QStringLiteral("length"));
+            if (clip->hasLimitedDuration()) {
+                clip->resetProducerProperty(QStringLiteral("length"));
+            }
         }
         if (!xml.isNull()) {
             clip->setClipStatus(FileStatus::StatusWaiting);

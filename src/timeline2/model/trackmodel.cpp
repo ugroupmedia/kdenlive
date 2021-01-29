@@ -268,19 +268,20 @@ bool TrackModel::requestClipInsertion(int clipId, int position, bool updateView,
         return false;
     }
     if (auto ptr = m_parent.lock()) {
-        if (isAudioTrack() && !ptr->getClipPtr(clipId)->canBeAudio()) {
+        std::shared_ptr<ClipModel> clip = ptr->getClipPtr(clipId);
+        if (isAudioTrack() && !clip->canBeAudio()) {
             qDebug() << "// ATTEMPTING TO INSERT NON AUDIO CLIP ON AUDIO TRACK";
             return false;
         }
-        if (!isAudioTrack() && !ptr->getClipPtr(clipId)->canBeVideo()) {
+        if (!isAudioTrack() && !clip->canBeVideo()) {
             qDebug() << "// ATTEMPTING TO INSERT NON VIDEO CLIP ON VIDEO TRACK";
             return false;
         }
         Fun local_undo = []() { return true; };
         Fun local_redo = []() { return true; };
         bool res = true;
-        if (ptr->getClipPtr(clipId)->clipState() != PlaylistState::Disabled) {
-            res = ptr->getClipPtr(clipId)->setClipState(isAudioTrack() ? PlaylistState::AudioOnly : PlaylistState::VideoOnly, local_undo, local_redo);
+        if (clip->clipState() != PlaylistState::Disabled) {
+            res = clip->setClipState(isAudioTrack() ? PlaylistState::AudioOnly : PlaylistState::VideoOnly, local_undo, local_redo);
         }
         int duration = trackDuration();
         auto operation = requestClipInsertion_lambda(clipId, position, updateView, finalMove, groupMove);
@@ -1616,7 +1617,7 @@ bool TrackModel::requestRemoveMix(std::pair<int, int> clipIds, Fun &undo, Fun &r
                 QModelIndex ix2 = ptr->makeClipIndexFromID(clipIds.second);
                 emit ptr->dataChanged(ix2, ix2, {TimelineModel::MixRole,TimelineModel::MixCutRole});
             }
-            return true; 
+            return true;
         };
         PUSH_LAMBDA(replay, redo);
         PUSH_LAMBDA(reverse, undo);
@@ -1686,7 +1687,7 @@ bool TrackModel::requestClipMix(std::pair<int, int> clipIds, int mixDuration, bo
         qDebug()<<"=== ERROR NO TIMELINE!!!!";
         return false;
     }
-    
+
     // Rearrange subsequent mixes
     Fun rearrange_playlists = []() { return true; };
     Fun rearrange_playlists_undo = []() { return true; };
@@ -1705,7 +1706,7 @@ bool TrackModel::requestClipMix(std::pair<int, int> clipIds, int mixDuration, bo
             }
             ix++;
         }
-        
+
         rearrange_playlists = [this, rearrangedPlaylists]() {
             // First, remove all clips on playlist 0
             QMapIterator<int, int> i(rearrangedPlaylists);
@@ -1868,7 +1869,7 @@ bool TrackModel::requestClipMix(std::pair<int, int> clipIds, int mixDuration, bo
         }
         return true;
     };
-    
+
     Fun destroy_mix = [clipIds, this]() {
         if (auto ptr = m_parent.lock()) {
             Mlt::Transition &transition = *static_cast<Mlt::Transition*>(m_sameCompositions[clipIds.second]->getAsset());
@@ -1909,7 +1910,7 @@ bool TrackModel::requestClipMix(std::pair<int, int> clipIds, int mixDuration, bo
             }
             return result;
         };
-        
+
         Fun reverse = [this, clipIds, source_track, secondClipDuration, firstClipDuration, destroy_mix, secondClipPos, updateView, finalMove, groupMove, operation, rearrange_playlists_undo]() {
             destroy_mix();
             std::function<bool(void)> local_undo = []() { return true; };

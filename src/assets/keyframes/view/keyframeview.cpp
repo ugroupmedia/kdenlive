@@ -297,7 +297,7 @@ void KeyframeView::mousePressEvent(QMouseEvent *event)
                     if (m_selectedKeyframes.contains(m_currentKeyframeOriginal)) {
                         m_selectedKeyframes.removeAll(m_currentKeyframeOriginal);
                         m_currentKeyframeOriginal = -1;
-                    } else if (m_currentKeyframeOriginal > 0) {
+                    } else {
                         m_selectedKeyframes << m_currentKeyframeOriginal;
                     }
                 } else if (!m_selectedKeyframes.contains(m_currentKeyframeOriginal)) {
@@ -396,7 +396,9 @@ void KeyframeView::mouseMoveEvent(QMouseEvent *event)
                 int delta = pos - m_currentKeyframe;
                 // Check that the move is possible
                 for (int kf : m_selectedKeyframes) {
-                    if (m_model->hasKeyframe(kf + offset + delta)) {
+                    int updatedPos = kf + offset + delta;
+                    if (!m_selectedKeyframes.contains(updatedPos) && m_model->hasKeyframe(updatedPos)) {
+                        // Don't allow moving over another keyframe
                         return;
                     }
                 }
@@ -443,7 +445,7 @@ void KeyframeView::mouseMoveEvent(QMouseEvent *event)
             update();
             return;
         }
-        
+
         if (!m_moveKeyframeMode || KdenliveSettings::keyframeseek()) {
             emit seekToPos(pos);
         }
@@ -452,7 +454,7 @@ void KeyframeView::mouseMoveEvent(QMouseEvent *event)
     if (event->y() < m_lineHeight) {
         bool ok;
         auto keyframe = m_model->getClosestKeyframe(position, &ok);
-        if (ok && qAbs(((position.frames(pCore->getCurrentFps()) - keyframe.first.frames(pCore->getCurrentFps())) * m_scale - m_zoomStart) * m_zoomFactor) < QApplication::startDragDistance()) {
+        if (ok && qAbs(((position.frames(pCore->getCurrentFps()) - keyframe.first.frames(pCore->getCurrentFps())) * m_scale) * m_zoomFactor) < QApplication::startDragDistance()) {
             m_hoverKeyframe = keyframe.first.frames(pCore->getCurrentFps()) - offset;
             setCursor(Qt::PointingHandCursor);
             m_hoverZoomIn = false;
@@ -689,6 +691,8 @@ void KeyframeView::paintEvent(QPaintEvent *event)
         if (pos == m_currentKeyframe) {
             p.setBrush(Qt::red);
         } else if (m_selectedKeyframes.contains(pos)) {
+            p.setBrush(Qt::darkRed);
+        } else if (pos == m_currentKeyframe || pos == m_hoverKeyframe) {
             p.setBrush(m_colSelected);
         } else if (pos == m_currentKeyframe || pos == m_hoverKeyframe) {
             p.setBrush(Qt::yellow);
@@ -796,9 +800,10 @@ void KeyframeView::copyCurrentValue(QModelIndex ix, const  QString paramName)
             newVal = val;
             parentCommand->setText(i18n("Update keyframes value"));
         }
-        qDebug()<<"=== UPDATED VAL: "<<newVal;
-        m_model->updateKeyframe(GenTime(kf + offset, pCore->getCurrentFps()), newVal, ix, parentCommand);
+        bool result = m_model->updateKeyframe(GenTime(kf + offset, pCore->getCurrentFps()), newVal, ix, parentCommand);
+        if (result) {
+            pCore->displayMessage(i18n("Keyframe value copied"), InformationMessage);
+        }
     }
     pCore->pushUndo(parentCommand);
-    //m_model->copyCurrentValue(paramName);
 }
