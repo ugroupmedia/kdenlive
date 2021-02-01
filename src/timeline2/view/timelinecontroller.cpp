@@ -808,6 +808,11 @@ void TimelineController::gotoPreviousGuide()
 
 void TimelineController::groupSelection()
 {
+    if (dragOperationRunning()) {
+        // Don't allow timeline operation while drag in progress
+        pCore->displayMessage(i18n("Cannot perform operation while dragging in timeline"), ErrorMessage);
+        return;
+    }
     const auto selection = m_model->getCurrentSelection();
     if (selection.size() < 2) {
         pCore->displayMessage(i18n("Select at least 2 items to group"), InformationMessage, 500);
@@ -820,6 +825,11 @@ void TimelineController::groupSelection()
 
 void TimelineController::unGroupSelection(int cid)
 {
+    if (dragOperationRunning()) {
+        // Don't allow timeline operation while drag in progress
+        pCore->displayMessage(i18n("Cannot perform operation while dragging in timeline"), ErrorMessage);
+        return;
+    }
     auto ids = m_model->getCurrentSelection();
     // ask to unselect if needed
     m_model->requestClearSelection();
@@ -842,7 +852,8 @@ void TimelineController::setInPoint()
 {
     if (dragOperationRunning()) {
         // Don't allow timeline operation while drag in progress
-        qDebug() << "Cannot operate while dragging";
+        pCore->displayMessage(i18n("Cannot perform operation while dragging in timeline"), ErrorMessage);
+        qDebug()<< "Cannot operate while dragging";
         return;
     }
 
@@ -885,6 +896,7 @@ void TimelineController::setOutPoint()
 {
     if (dragOperationRunning()) {
         // Don't allow timeline operation while drag in progress
+        pCore->displayMessage(i18n("Cannot perform operation while dragging in timeline"), ErrorMessage);
         qDebug() << "Cannot operate while dragging";
         return;
     }
@@ -1397,7 +1409,7 @@ void TimelineController::selectItems(const QVariantList &tracks, int startFrame,
             auto currentSubs = subtitleModel->getItemsInRange(startFrame, endFrame);
             itemsToSelect.insert(currentSubs.begin(), currentSubs.end());
         }
-        
+
     }
     m_model->requestSetSelection(itemsToSelect);
 }
@@ -1472,7 +1484,7 @@ void TimelineController::cutSubtitle(int id, int cursorPos)
         Fun redo = []() { return true; };
         bool res = subtitleModel->cutSubtitle(timelinePos, undo, redo);
         if (res) {
-            Fun local_redo = [subtitleModel, start, position, firstText, secondText]() { 
+            Fun local_redo = [subtitleModel, start, position, firstText, secondText]() {
                 subtitleModel->editSubtitle(start, firstText);
                 subtitleModel->editSubtitle(position, secondText);
                 return true;
