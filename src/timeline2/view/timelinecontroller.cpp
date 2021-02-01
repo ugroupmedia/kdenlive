@@ -1305,19 +1305,6 @@ int TimelineController::getFirstUnassignedStream() const
     return -1;
 }
 
-
-int TimelineController::getFirstUnassignedStream() const
-{
-    QList <int> keys = m_model->m_binAudioTargets.keys();
-    QList <int> assigned = m_model->m_audioTarget.values();
-    for (int k : qAsConst(keys)) {
-        if (!assigned.contains(k)) {
-            return k;
-        }
-    }
-    return -1;
-}
-
 void TimelineController::setVideoTarget(int track)
 {
     if ((track > -1 && !m_model->isTrack(track)) || !m_hasVideoTarget) {
