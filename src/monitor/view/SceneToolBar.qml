@@ -43,8 +43,8 @@ MouseArea {
             animator.start()
         }
 
-
-
+    
+        
         Column {
             ToolButton {
                 id: fullscreenButton
@@ -68,11 +68,11 @@ MouseArea {
                 ToolTip.timeout: 3000
                 onClicked: {
                     if (controller.overlayType >= 5) {
-                    controller.overlayType = 0
-                } else {
-                    controller.overlayType = controller.overlayType + 1;
-                }
-                root.overlayType = controller.overlayType
+                        controller.overlayType = 0
+                    } else {
+                        controller.overlayType = controller.overlayType + 1;
+                    }
+                    root.overlayType = controller.overlayType
                 }
             }
             ToolButton {

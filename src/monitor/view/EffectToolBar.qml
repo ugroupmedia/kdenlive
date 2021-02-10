@@ -22,9 +22,9 @@ MouseArea {
         objectName: "effecttoolbar"
         width: fullscreenButton.width
         anchors.right: barZone.right
-        property bool showAutoKeyframe: false
-    height: childrenRect.height
-    color: Qt.rgba(activePalette.window.r, activePalette.window.g, activePalette.window.b, 0.7)opacity: 0
+        height: childrenRect.height
+        color: Qt.rgba(activePalette.window.r, activePalette.window.g, activePalette.window.b, 0.7)
+        opacity: 0
         radius: 4
         border.color : Qt.rgba(0, 0, 0, 0.3)
         border.width: 1
@@ -71,20 +71,7 @@ MouseArea {
                 }
             }
             ToolButton {
-                objectName: "switchOverlay"
-            iconName: "view-grid"
-            tooltip: i18n("Change Overlay")
-            onClicked: {
-                if (controller.overlayType >= 5) {
-                    controller.overlayType = 0
-                } else {
-                    controller.overlayType = controller.overlayType + 1;
-                }
-                root.overlayType = controller.overlayType
-            }
-        }
-        ToolButton {
-            objectName: "nextKeyframe"
+                objectName: "nextKeyframe"
                 icon.name: "go-next"
                 ToolTip.visible: hovered
                 ToolTip.delay: Qt.styleHints.mousePressAndHoldInterval
@@ -125,14 +112,6 @@ MouseArea {
                 ToolTip.text: i18n("Zoom out")
                 ToolTip.timeout: 3000
                 onClicked: controller.triggerAction('monitor_zoomout')
-        }
-        ToolButton {
-            iconName: "media-record"
-            tooltip: i18n("Automatic Keyframes")
-            onClicked: controller.switchAutoKeyframe()
-            checkable: true
-            checked: controller.autoKeyframe
-            visible: showAutoKeyframe
             }
             ToolButton {
                 icon.name: "media-record"

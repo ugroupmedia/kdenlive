@@ -170,7 +170,7 @@ Rectangle {
     onScrollXChanged: {
         updateLabelOffset()
     }
-
+    
     function updateLabelOffset()
     {
         labelRect.x = scrollX > modelStart * timeScale ? scrollX - modelStart * timeScale : 0
@@ -333,7 +333,7 @@ Rectangle {
             anchors.margins: clipRoot.border.width
             //clip: true
             property bool showDetails: (!clipRoot.selected || !effectRow.visible) && container.height > 2.2 * labelRect.height
-
+            
             Item {
                 // Mix indicator
                 id: mixContainer
@@ -341,7 +341,7 @@ Rectangle {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: clipRoot.mixDuration * clipRoot.timeScale
-
+                
                 Rectangle {
                     id: mixBackground
                     property double mixPos: mixBackground.width - clipRoot.mixCut * clipRoot.timeScale
@@ -455,7 +455,7 @@ Rectangle {
                         }
                     }
                 }
-
+                
             }
 
             Repeater {
@@ -855,7 +855,7 @@ Rectangle {
                     }
                }
                Rectangle{
-                    //proxy
+                    //proxy 
                     id:proxyRect
                     color: '#fdbc4b'
                     width: labelRect.height

@@ -599,7 +599,7 @@ Item {
                           pointContainsMouse = true;
                           canvas.requestPaint()
                           return;
-                      }
+                      } 
                   }
 
                   // Check if we are on a line segment
