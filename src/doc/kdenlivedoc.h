@@ -38,6 +38,8 @@
 #include "definitions.h"
 #include "gentime.h"
 #include "timecode.h"
+#include <chrono>
+#include <ctime>
 
 class MainWindow;
 class TrackInfo;
@@ -184,6 +186,7 @@ public:
     void initializeSubtitles(const std::shared_ptr<SubtitleModel> m_subtitle);
     /** @brief Returns a path for current document's subtitle file. If final is true, this will be the project filename with ".srt" appended. Otherwise a file in /tmp */
     const QString subTitlePath(bool final);
+    QString addDateAndTimeToXml(const QString &scene);
 
 private:
     QUrl m_url;
