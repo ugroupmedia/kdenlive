@@ -572,7 +572,8 @@ QDomDocument KdenliveDoc::xmlSceneList(const QString &scene)
 
 bool KdenliveDoc::saveSceneList(const QString &path, const QString &scene)
 {
-    QDomDocument sceneList = xmlSceneList(scene);
+    QString dateTimeScene = addDateAndTimeToXml(scene);
+    QDomDocument sceneList = xmlSceneList(dateTimeScene);
     if (sceneList.isNull()) {
         // Make sure we don't save if scenelist is corrupted
         KMessageBox::error(QApplication::activeWindow(), i18n("Cannot write to file %1, scene list is corrupted.", path));
@@ -636,6 +637,25 @@ bool KdenliveDoc::saveSceneList(const QString &path, const QString &scene)
     QDir backupFolder(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/.backup"));
     emit saveTimelinePreview(backupFolder.absoluteFilePath(fileName));
     return true;
+}
+
+QString KdenliveDoc::addDateAndTimeToXml(const QString &scene)
+{
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::string dateTime = std::ctime(&now_time);
+    dateTime.erase(std::remove(dateTime.begin(), dateTime.end(), '\n'), dateTime.end());
+    std::string fileName = m_url.fileName().toUtf8().constData();
+    dateTime = "<!-- " + fileName + " modified " + dateTime + " -->\n";
+
+    std::string stdScene = scene.toUtf8().constData();
+    std::size_t mlt = stdScene.find("<mlt ");
+    if (mlt != std::string::npos)
+    {
+        stdScene.insert(mlt, dateTime);
+    }
+
+    return QString::fromStdString(stdScene);
 }
 
 QString KdenliveDoc::projectTempFolder() const
